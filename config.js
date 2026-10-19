@@ -1,1 +1,1 @@
-window.SHAOYONG_CONFIG = Object.freeze({"SUPABASE_URL":"","SUPABASE_ANON_KEY":"","FREE_CHAT_URL":"","ALLOWED_ORIGIN":"","TURNSTILE_SITE_KEY":""});
+window.SHAOYONG_CONFIG = Object.freeze({"SUPABASE_URL":"https://fghwvdbihfthfbzdlrgj.supabase.co","SUPABASE_ANON_KEY":"sb_publishable_o3F1FxPCruAkhyZv_jpXYw_blCDVf-6","FREE_CHAT_URL":"https://fghwvdbihfthfbzdlrgj.supabase.co/functions/v1/free-chat","ALLOWED_ORIGIN":"https://050121lxk.github.io","TURNSTILE_SITE_KEY":""});
