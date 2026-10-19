@@ -1,0 +1,382 @@
+[
+  {
+    "date": "2026-10-16T19:37",
+    "info": {
+      "lunarYearZhi": "午",
+      "lunarMonth": 9,
+      "leap": false,
+      "lunarDay": 7,
+      "hourNum": 11,
+      "yearGz": "丙午",
+      "monthGz": "戊戌",
+      "dayGz": "癸亥",
+      "hourGz": "壬戌"
+    },
+    "board": [
+      7,
+      2,
+      4
+    ]
+  },
+  {
+    "date": "2025-12-02T20:51",
+    "info": {
+      "lunarYearZhi": "巳",
+      "lunarMonth": 10,
+      "leap": false,
+      "lunarDay": 13,
+      "hourNum": 11,
+      "yearGz": "乙巳",
+      "monthGz": "丁亥",
+      "dayGz": "乙巳",
+      "hourGz": "丙戌"
+    },
+    "board": [
+      5,
+      8,
+      4
+    ]
+  },
+  {
+    "date": "2025-04-15T12:00",
+    "info": {
+      "lunarYearZhi": "巳",
+      "lunarMonth": 3,
+      "leap": false,
+      "lunarDay": 18,
+      "hourNum": 7,
+      "yearGz": "乙巳",
+      "monthGz": "庚辰",
+      "dayGz": "甲寅",
+      "hourGz": "庚午"
+    },
+    "board": [
+      3,
+      2,
+      4
+    ]
+  },
+  {
+    "date": "2025-01-28T23:59",
+    "info": {
+      "lunarYearZhi": "辰",
+      "lunarMonth": 12,
+      "leap": false,
+      "lunarDay": 29,
+      "hourNum": 1,
+      "yearGz": "甲辰",
+      "monthGz": "丁丑",
+      "dayGz": "丁酉",
+      "hourGz": "庚子"
+    },
+    "board": [
+      6,
+      7,
+      5
+    ]
+  },
+  {
+    "date": "2025-01-29T00:00",
+    "info": {
+      "lunarYearZhi": "巳",
+      "lunarMonth": 1,
+      "leap": false,
+      "lunarDay": 1,
+      "hourNum": 1,
+      "yearGz": "甲辰",
+      "monthGz": "丁丑",
+      "dayGz": "戊戌",
+      "hourGz": "壬子"
+    },
+    "board": [
+      8,
+      1,
+      3
+    ]
+  },
+  {
+    "date": "2024-02-04T16:00",
+    "info": {
+      "lunarYearZhi": "卯",
+      "lunarMonth": 12,
+      "leap": false,
+      "lunarDay": 25,
+      "hourNum": 9,
+      "yearGz": "甲辰",
+      "monthGz": "乙丑",
+      "dayGz": "戊戌",
+      "hourGz": "庚申"
+    },
+    "board": [
+      1,
+      2,
+      2
+    ]
+  },
+  {
+    "date": "2024-02-04T17:00",
+    "info": {
+      "lunarYearZhi": "卯",
+      "lunarMonth": 12,
+      "leap": false,
+      "lunarDay": 25,
+      "hourNum": 10,
+      "yearGz": "甲辰",
+      "monthGz": "丙寅",
+      "dayGz": "戊戌",
+      "hourGz": "辛酉"
+    },
+    "board": [
+      1,
+      3,
+      3
+    ]
+  },
+  {
+    "date": "2025-02-03T22:00",
+    "info": {
+      "lunarYearZhi": "巳",
+      "lunarMonth": 1,
+      "leap": false,
+      "lunarDay": 6,
+      "hourNum": 12,
+      "yearGz": "乙巳",
+      "monthGz": "丁丑",
+      "dayGz": "癸卯",
+      "hourGz": "癸亥"
+    },
+    "board": [
+      5,
+      1,
+      1
+    ]
+  },
+  {
+    "date": "2025-02-03T23:00",
+    "info": {
+      "lunarYearZhi": "巳",
+      "lunarMonth": 1,
+      "leap": false,
+      "lunarDay": 6,
+      "hourNum": 1,
+      "yearGz": "乙巳",
+      "monthGz": "戊寅",
+      "dayGz": "癸卯",
+      "hourGz": "壬子"
+    },
+    "board": [
+      5,
+      6,
+      2
+    ]
+  },
+  {
+    "date": "2025-07-25T12:00",
+    "info": {
+      "lunarYearZhi": "巳",
+      "lunarMonth": 6,
+      "leap": true,
+      "lunarDay": 1,
+      "hourNum": 7,
+      "yearGz": "乙巳",
+      "monthGz": "癸未",
+      "dayGz": "乙未",
+      "hourGz": "壬午"
+    },
+    "board": [
+      5,
+      4,
+      2
+    ]
+  },
+  {
+    "date": "2025-08-01T12:00",
+    "info": {
+      "lunarYearZhi": "巳",
+      "lunarMonth": 6,
+      "leap": true,
+      "lunarDay": 8,
+      "hourNum": 7,
+      "yearGz": "乙巳",
+      "monthGz": "癸未",
+      "dayGz": "壬寅",
+      "hourGz": "丙午"
+    },
+    "board": [
+      4,
+      3,
+      3
+    ]
+  },
+  {
+    "date": "2026-10-16T22:59",
+    "info": {
+      "lunarYearZhi": "午",
+      "lunarMonth": 9,
+      "leap": false,
+      "lunarDay": 7,
+      "hourNum": 12,
+      "yearGz": "丙午",
+      "monthGz": "戊戌",
+      "dayGz": "癸亥",
+      "hourGz": "癸亥"
+    },
+    "board": [
+      7,
+      3,
+      5
+    ]
+  },
+  {
+    "date": "2026-10-16T23:00",
+    "info": {
+      "lunarYearZhi": "午",
+      "lunarMonth": 9,
+      "leap": false,
+      "lunarDay": 7,
+      "hourNum": 1,
+      "yearGz": "丙午",
+      "monthGz": "戊戌",
+      "dayGz": "癸亥",
+      "hourGz": "壬子"
+    },
+    "board": [
+      7,
+      8,
+      6
+    ]
+  },
+  {
+    "date": "2026-10-16T23:59",
+    "info": {
+      "lunarYearZhi": "午",
+      "lunarMonth": 9,
+      "leap": false,
+      "lunarDay": 7,
+      "hourNum": 1,
+      "yearGz": "丙午",
+      "monthGz": "戊戌",
+      "dayGz": "癸亥",
+      "hourGz": "壬子"
+    },
+    "board": [
+      7,
+      8,
+      6
+    ]
+  },
+  {
+    "date": "2026-10-17T00:00",
+    "info": {
+      "lunarYearZhi": "午",
+      "lunarMonth": 9,
+      "leap": false,
+      "lunarDay": 8,
+      "hourNum": 1,
+      "yearGz": "丙午",
+      "monthGz": "戊戌",
+      "dayGz": "甲子",
+      "hourGz": "甲子"
+    },
+    "board": [
+      8,
+      1,
+      1
+    ]
+  },
+  {
+    "date": "2026-10-08T00:00",
+    "info": {
+      "lunarYearZhi": "午",
+      "lunarMonth": 8,
+      "leap": false,
+      "lunarDay": 28,
+      "hourNum": 1,
+      "yearGz": "丙午",
+      "monthGz": "丁酉",
+      "dayGz": "乙卯",
+      "hourGz": "丙子"
+    },
+    "board": [
+      3,
+      4,
+      2
+    ]
+  },
+  {
+    "date": "2026-10-08T23:00",
+    "info": {
+      "lunarYearZhi": "午",
+      "lunarMonth": 8,
+      "leap": false,
+      "lunarDay": 28,
+      "hourNum": 1,
+      "yearGz": "丙午",
+      "monthGz": "戊戌",
+      "dayGz": "乙卯",
+      "hourGz": "丙子"
+    },
+    "board": [
+      3,
+      4,
+      2
+    ]
+  },
+  {
+    "date": "2024-02-29T00:30",
+    "info": {
+      "lunarYearZhi": "辰",
+      "lunarMonth": 1,
+      "leap": false,
+      "lunarDay": 20,
+      "hourNum": 1,
+      "yearGz": "甲辰",
+      "monthGz": "丙寅",
+      "dayGz": "癸亥",
+      "hourGz": "壬子"
+    },
+    "board": [
+      2,
+      3,
+      3
+    ]
+  },
+  {
+    "date": "2023-12-31T23:59",
+    "info": {
+      "lunarYearZhi": "卯",
+      "lunarMonth": 11,
+      "leap": false,
+      "lunarDay": 19,
+      "hourNum": 1,
+      "yearGz": "癸卯",
+      "monthGz": "甲子",
+      "dayGz": "癸亥",
+      "hourGz": "壬子"
+    },
+    "board": [
+      2,
+      3,
+      5
+    ]
+  },
+  {
+    "date": "2024-01-01T00:00",
+    "info": {
+      "lunarYearZhi": "卯",
+      "lunarMonth": 11,
+      "leap": false,
+      "lunarDay": 20,
+      "hourNum": 1,
+      "yearGz": "癸卯",
+      "monthGz": "甲子",
+      "dayGz": "甲子",
+      "hourGz": "甲子"
+    },
+    "board": [
+      3,
+      4,
+      6
+    ]
+  }
+]

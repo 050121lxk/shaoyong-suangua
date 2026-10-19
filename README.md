@@ -11,7 +11,7 @@
 ![Python](https://img.shields.io/badge/Python-3.9%2B-426b61?style=flat-square)
 ![Methods](https://img.shields.io/badge/方法-起卦·取象·体用·互证-94734e?style=flat-square)
 
-[快速开始](#快速开始) · [方法一览](#方法一览) · [使用示例](#使用示例) · [文件导航](#文件导航)
+[在线体验](https://050121lxk.github.io/shaoyong-suangua/) · [快速开始](#快速开始) · [方法一览](#方法一览) · [使用示例](#使用示例) · [文件导航](#文件导航)
 
 </div>
 
@@ -91,6 +91,22 @@
 
 ## 快速开始
 
+### 在线体验 · 自带 API Key
+
+**[打开「观象」在线体验页 →](https://050121lxk.github.io/shaoyong-suangua/)**
+
+无需安装 OpenCode，填写自己的 **API 接口地址、API Key 和模型 ID** 即可体验：
+
+- 水墨风对话页面，支持时间起卦、沿用已有卦局、测字与观物描述。
+- 浏览器本地计算农历、干支与主互变，已与原 Python 引擎交叉验证；同一件事的追问固定原卦。
+- 加载本仓库四份规则全文，支持手写字图片（需视觉模型）。
+- **Key 只放在当前页面内存**，不写入 URL 或浏览器存储；刷新或离开后清除，不交给本项目服务器。
+- 请求直接发送到用户填写的接口，首次发送、更换地址或模型时明确确认去向。服务商会收到 Key、规则、问题、历史和附图，请只使用可信地址。
+
+> 首版仅支持 **OpenAI 兼容 Chat Completions**，不支持 Claude / Gemini 原生接口或 Responses。服务商必须允许浏览器跨域（CORS）；不能直连时，不要关闭浏览器安全机制。完整规则约 4.9 万字符（不等于 token 数），每轮随历史发送，建议至少 128K 上下文并留意费用。网页不是完整 OpenCode 环境，没有终端或真实外应感知。
+
+本地开发与网站发布方法见 [web/README.md](web/README.md)。
+
 ### 安装到 OpenCode
 
 将仓库完整下载并解压，把包含 `SKILL.md` 的文件夹命名为 `shaoyong-suangua`，放到下列任一位置：
@@ -164,7 +180,12 @@ shaoyong-suangua/
 ├── YAO_CI.md          # 六十四卦卦辞与爻辞
 ├── requirements.txt   # 计算脚本的固定版本依赖
 ├── scripts/
-│   └── qigua.py       # 时间起卦 / 历法与干支计算
+│   ├── qigua.py       # 时间起卦 / 历法与干支计算
+│   ├── build-web.mjs  # 打包网页、完整规则和本地历法库
+│   └── deploy-web.mjs # 发布静态站到 gh-pages 分支
+├── web/              # 在线体验页（不含任何密钥）
+├── tests/            # 历法边界、卦局、安全与接口兼容测试
+├── package.json      # 网页构建命令及固定版本历法依赖
 └── assets/
     └── banner.svg     # 主页横幅
 ```
