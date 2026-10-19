@@ -91,11 +91,11 @@
 
 ## 快速开始
 
-### 在线体验 · 自带 API Key
+### 在线体验 · 免费登录 / 自带 API Key
 
 **[打开「观象」在线体验页 →](https://050121lxk.github.io/shaoyong-suangua/)**
 
-无需安装 OpenCode，填写自己的 **API 接口地址、API Key 和模型 ID** 即可体验：
+无需安装 OpenCode：管理员开通 Supabase 后，可使用 GitHub／邮箱验证码注册登录，每账号每日免费 5 次、全站每日 100 次（北京时间零点更新，发送失败也可能计次）。未配置时自动回到自带 Key 模式，填写 **API 接口地址、API Key 和模型 ID** 即可体验：
 
 - 水墨风对话页面，支持时间起卦、沿用已有卦局、测字与观物描述。
 - 浏览器本地计算农历、干支与主互变，已与原 Python 引擎交叉验证；同一件事的追问固定原卦。
@@ -106,6 +106,8 @@
 > 首版仅支持 **OpenAI 兼容 Chat Completions**，不支持 Claude / Gemini 原生接口或 Responses。服务商必须允许浏览器跨域（CORS）；不能直连时，不要关闭浏览器安全机制。完整规则约 4.9 万字符（不等于 token 数），每轮随历史发送，建议至少 128K 上下文并留意费用。网页不是完整 OpenCode 环境，没有终端或真实外应感知。
 
 本地开发与网站发布方法见 [web/README.md](web/README.md)。
+
+免费通道固定使用 `deepseek-v4.1-flash-1017-g`，共享 Key 仅放服务端，不能靠前端混淆保密。**免费服务需要单独部署和配置，不随源码发布自动开通**；管理员请见 [Supabase 开通指南](supabase/README.md)。
 
 ### 安装到 OpenCode
 

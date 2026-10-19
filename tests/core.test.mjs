@@ -84,10 +84,14 @@ test('relations and remainder zero follow skill conventions', () => {
   assert.equal(wangshuai('水', '亥'), '旺'); assert.equal(wangshuai('木', '亥'), '相');
 });
 
-test('web uses text-only output, no browser persistence and no external executable assets', () => {
+test('web uses text-only output, memory-only auth and only an explicitly configured CAPTCHA script', () => {
   const app = readFileSync(new URL('../web/app.mjs', import.meta.url), 'utf8');
+  const auth = readFileSync(new URL('../web/auth.mjs', import.meta.url), 'utf8');
   const html = readFileSync(new URL('../web/index.html', import.meta.url), 'utf8');
   assert.doesNotMatch(app, /\.innerHTML|\.outerHTML|insertAdjacentHTML|localStorage|sessionStorage|indexedDB|document\.cookie/);
+  assert.doesNotMatch(auth, /\.innerHTML|\.outerHTML|insertAdjacentHTML|localStorage|sessionStorage|indexedDB|document\.cookie/);
+  assert.match(auth, /persistSession: false/);
+  assert.match(auth, /if \(!config\.TURNSTILE_SITE_KEY\) return/);
   assert.doesNotMatch(html, /<script[^>]+src="https?:/);
   assert.match(app, /redirect: 'error'/);
   assert.match(app, /credentials: 'omit'/);

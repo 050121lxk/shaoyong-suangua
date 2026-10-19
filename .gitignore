@@ -16,3 +16,5 @@ Thumbs.db
 desktop.ini
 node_modules/
 _site/
+web/config.js
+supabase/.temp/

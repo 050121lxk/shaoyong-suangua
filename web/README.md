@@ -2,20 +2,20 @@
 
 线上地址：**https://050121lxk.github.io/shaoyong-suangua/**
 
-纯静态网页，无后端、代理、统计、外部字体或运行时 CDN。浏览器直连用户指定的 OpenAI 兼容 Chat Completions 接口。四份仓库规则在构建时复制，每轮请求完整发送；网页适配提示词明确工具限制、真实外应和健康类边界。
+GitHub Pages 静态前端，提供两个独立通道：自带 Key 由浏览器直连；免费体验需部署 Supabase 登录、数据库配额与服务端代理。没有后台配置时自动回到自带 Key 模式。免费通道不会在网页内置共享 Key。开通步骤见 [supabase/README.md](../supabase/README.md)。无统计或外部字体；配置邮箱验证后会加载 Cloudflare Turnstile。
 
 ## 本地运行
 
 需要 Node.js 22+；原 Python 计算工具不受影响。
 
 ```sh
-npm ci --ignore-scripts
+npm ci
 npm test
 npm run build
 python -m http.server 8765 --directory _site
 ```
 
-打开 http://localhost:8765 。不要直接双击 HTML：规则加载需 HTTP 服务。`_site/` 是生成目录，不要手工修改。历法依赖 `lunar-javascript==1.7.7` 固定版本打包，保留 MIT 声明；无远程脚本。
+打开 http://localhost:8765 。不要直接双击 HTML：规则加载需 HTTP 服务。`_site/` 是生成目录，构建会重建，不要手工修改或放私人文件。历法依赖 `lunar-javascript==1.7.7` 固定版本本地打包，Supabase SDK 经 esbuild 打包压缩；压缩不是保密方案。
 
 `tests/calendar-fixtures.json` 来自原 `lunar_python==1.4.8` 引擎。安装 Python 依赖后可用 `python scripts/calendar-fixtures.py` 重新生成，覆盖春节、立春、闰月、节气月和23点/0点。`npm test` 还验证全部384种主卦/动爻组合。
 
@@ -34,12 +34,12 @@ npm run deploy
 
 ## 隐私与安全边界
 
-- API Key、图片、对话只在当前页面内存；不使用 localStorage/sessionStorage/IndexedDB/cookie，不把 Key 放 URL。离开或刷新清除 Key，浏览器插件仍可能读取页面。
+- 自带 API Key、图片、对话、免费登录会话只在当前页面内存，不主动持久化。OAuth 登录回调令牌由 SDK 消费并清理；浏览器插件仍可能读取页面。
 - HTTPS 接口优先，仅 localhost/127.0.0.1/::1 支持 HTTP；托管页访问本机接口仍受混合内容、本地网络访问权限与 CORS 限制。
 - 发送前确认完整目标与模型；拒绝请求重定向，禁用 cookie 携带及 Referer，不自动重试付费请求。
 - 仅展示用户/模型的纯文本，不解释 HTML、Markdown、远程图片或可执行链接；服务商错误正文不显示，避免反射密钥和恶意 HTML。
 - 附图仅 JPG/PNG/WebP，最大10MB，本地缩放到最长1600px并重新编码 JPEG 后发送。识字准确性取决于视觉模型。
-- 每局最多20轮，180秒等待超时，可停止等待。停止不等于服务商取消计费。失败保留输入，不把失败请求加入模型历史。
+- 自带 Key 每局最多20轮；免费每局最多5轮（每日5次由服务端计数，新局不重置）。浏览器180秒等待超时；免费后端上游115秒超时，预留云端处理时间。停止不等于服务商取消计费，失败可能计次。失败保留输入，不加入模型历史。
 - 大模型可能忽略或误解规则，历法库和模型也可能出错。网页是文化学习演示，不作专业判断与准确率承诺。
 
 ## 当前兼容范围

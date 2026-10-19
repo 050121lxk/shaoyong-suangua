@@ -4,12 +4,13 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="referrer" content="no-referrer">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; connect-src 'self' https: http://localhost:* http://127.0.0.1:* http://[::1]:*; object-src 'none'; base-uri 'none'; form-action 'none'">
-  <meta name="description" content="自带 API Key，在线体验梅花易数 AI Skill。浏览器本地排卦，完整规则随仓库更新。">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://challenges.cloudflare.com; frame-src https://challenges.cloudflare.com; style-src 'self'; img-src 'self' data: blob:; connect-src 'self' https: http://localhost:* http://127.0.0.1:* http://[::1]:*; object-src 'none'; base-uri 'none'; form-action 'none'">
+  <meta name="description" content="在线体验梅花易数 AI Skill，支持登录免费体验与自带 API Key。浏览器本地排卦，完整规则随仓库更新。">
   <title>观象 · 梅花易数在线体验</title>
   <link rel="icon" href="./icon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="./style.css">
   <script src="./vendor/lunar.js" defer></script>
+  <script src="./config.js" defer></script>
   <script src="./app.mjs" type="module"></script>
 </head>
 <body>
@@ -24,7 +25,7 @@
       <div class="hero-copy">
         <p class="eyebrow"><span></span> 梅花易数 · AI SKILL PLAYGROUND</p>
         <h1 id="hero-title">从一念起，<br>观万物之<span>象。</span></h1>
-        <p class="hero-description">让阴阳有结构，让推演有依据。<br>带上你的模型与 API Key，在这里体验完整的梅花易数规则。</p>
+        <p class="hero-description">让阴阳有结构，让推演有依据。<br>登录免费体验，或带上自己的 API Key，探索完整的梅花易数规则。</p>
         <div class="hero-tags"><span>本地排卦</span><span>自带密钥</span><span>规则可查</span></div>
       </div>
       <div class="landscape" aria-hidden="true">
@@ -38,7 +39,33 @@
 
     <section id="workspace" class="workspace" aria-label="在线体验工作区">
       <aside class="settings-panel">
-        <div class="section-heading"><span class="step">01</span><h2>连接你的模型</h2><span class="local-badge">仅本页内存</span></div>
+        <div class="section-heading"><span class="step">01</span><h2>选择体验方式</h2><span class="local-badge">密钥不进网页</span></div>
+        <label for="service-mode" class="service-mode-label">模型服务</label>
+        <select id="service-mode"><option value="free">登录免费体验 · 每日 5 次</option><option value="byok">自带 API Key · 原有模式</option></select>
+        <section id="free-panel" class="auth-panel" aria-label="免费服务登录">
+          <p class="section-description">deepseek-v4.1-flash-1017-g<br>每账号每日 5 次，全站每日 100 次；北京时间零点更新。发送计次，失败不退回。</p>
+          <p id="auth-status" role="status">正在检查免费服务配置…</p>
+          <div id="auth-actions" hidden>
+            <button type="button" id="github-login" class="secondary-button">使用 GitHub 登录</button>
+            <form id="email-form" autocomplete="off">
+              <label for="login-email">邮箱 · 首次验证即注册</label>
+              <input id="login-email" type="email" autocomplete="email" placeholder="you@example.com" maxlength="254" required>
+              <p class="captcha-label">人机验证</p>
+              <div id="captcha-widget"></div>
+              <input id="captcha-token" type="hidden">
+              <p class="field-help">邮箱登录需管理员启用验证码；验证服务不可用时请改用 GitHub。</p>
+              <button type="submit" id="email-login" class="secondary-button">发送一次性验证码</button>
+            </form>
+            <form id="otp-form" hidden autocomplete="off">
+              <label for="email-otp">邮箱验证码</label>
+              <input id="email-otp" type="text" inputmode="numeric" pattern="[0-9]{6,10}" maxlength="10" autocomplete="one-time-code" required>
+              <button type="submit" class="secondary-button">验证并登录</button>
+            </form>
+          </div>
+          <div id="signed-in" hidden><p id="quota-status" role="status"></p><button id="refresh-quota" type="button" class="text-button">刷新次数</button> · <button id="logout" type="button" class="text-button">退出登录</button></div>
+          <p class="field-help">登录后会话仅留在本页。免费请求经 Supabase 后端转发到 api.ccode.vip；服务商会收到问题、历史、规则和附图。登录服务处理账号资料，数据库仅保存配额，不保存聊天。</p>
+        </section>
+        <div id="byok-panel" hidden>
         <p class="section-description">支持 OpenAI 兼容的 Chat Completions 接口。</p>
         <form id="settings-form" autocomplete="off">
           <fieldset id="connection-fields">
@@ -55,6 +82,7 @@
           </fieldset>
         </form>
         <div class="privacy-card"><span aria-hidden="true">↗</span><p>点击发送，Key 将作为认证凭据<strong>直接发给你填写的接口</strong>。问题、图片、历史对话与规则也会发给该服务商，请只使用可信地址。</p></div>
+        </div>
 
         <div class="panel-divider"></div>
         <div class="section-heading"><span class="step">02</span><h2>确定起卦方式</h2></div>
@@ -108,8 +136,8 @@
     <section id="guide" class="guide" aria-labelledby="guide-title">
       <div class="guide-intro"><p class="eyebrow">BEFORE YOU BEGIN</p><h2 id="guide-title">把边界说在前面。</h2><p>规则公开、密钥自备，推演过程可对照。</p></div>
       <div class="guide-cards">
-        <article><span>01 / 隐私</span><h3>你的密钥，你来掌握</h3><p>本站不设 API 代理、统计或后端。Key 不写入 URL、日志或浏览器存储；刷新即丢失。服务商仍可按其政策留存请求，浏览器扩展也可能读取页面。</p></article>
-        <article><span>02 / 兼容</span><h3>不是每个接口都能直连</h3><p>服务商需允许浏览器跨域（CORS），并兼容 Chat Completions。Claude 原生、Gemini 原生和 Responses 接口暂不支持。不要通过关闭浏览器安全机制解决跨域问题。</p></article>
+        <article><span>01 / 隐私</span><h3>密钥只在需要的地方</h3><p>免费服务的 Key 仅放在 Supabase 服务端，登录后由后端转发。自带 Key 模式直接请求你的接口。聊天不写入本项目数据库，服务商仍可能按其政策留存；不要发送隐私资料。</p></article>
+        <article><span>02 / 兼容</span><h3>免费与自带 Key 分开</h3><p>免费服务仅限验证后的 GitHub／邮箱账号，每账号每天 5 次、全站 100 次，不能保证五次内解完一卦。自带 Key 需接口支持跨域和 Chat Completions，不受免费配额影响。</p></article>
         <article><span>03 / 能力</span><h3>完整规则，不等于完整工具</h3><p>四份规则全文随请求加载，建议模型有至少 128K 上下文（64K 可能不足）。历法在本地算，解释由模型生成；没有 OpenCode 的终端、检索工具或真实环境感知，不能自动观察外应。</p></article>
       </div>
       <details class="faq"><summary>发送失败、余额消耗或图片无法识别怎么办？</summary><p>401 / 403：检查密钥和模型权限。404：检查接口路径和模型 ID。429：检查余额、速率和配额。网络错误：可能是 CORS、DNS、TLS 或浏览器限制。上下文不足：换大上下文模型或新开一局；完整规则和历史每轮都会计入输入费用。图片会在本地缩放、重编码后发送给所选服务商，不能保证文字识别无误。取消请求也不代表服务商已停止计费。本页不会自动重试收费请求。</p></details>
@@ -118,7 +146,7 @@
   <footer><div class="footer-brand">观象 <span>梅花易数 · AI Skill</span></div><p>出自「梅花长手」改编体系 · 以邵雍《梅花易数》为底本</p><a href="https://github.com/050121lxk/shaoyong-suangua" target="_blank" rel="noopener noreferrer">规则与源码 ↗</a></footer>
 
   <dialog id="consent-dialog" aria-labelledby="consent-title">
-    <h2 id="consent-title">确认请求去向</h2><p>请核对以下地址。你的 API Key 将直接发给该接口，问题、完整规则、对话和附图将由其模型处理。</p>
+    <h2 id="consent-title">确认请求去向</h2><p id="consent-description">请核对以下地址。你的 API Key 将直接发给该接口，问题、完整规则、对话和附图将由其模型处理。</p>
     <dl><dt>接收接口</dt><dd id="consent-endpoint"></dd><dt>模型</dt><dd id="consent-model"></dd></dl>
     <p class="consent-warning">本项目无法验证第三方接口是否可信。仅使用你信任的服务商；首次发送及更换地址或模型时会再次确认。每轮含完整规则，可能消耗较多 token。</p>
     <div class="dialog-actions"><button id="consent-cancel" type="button" class="secondary-button">取消</button><button id="consent-confirm" type="button" class="primary-button">确认并发送</button></div>

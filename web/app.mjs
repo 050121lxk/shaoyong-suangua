@@ -1,5 +1,6 @@
 import { TRIGRAMS, beijingNow, timeInfo, timeHexagram, buildHexagram, hexagram,
   calendarText, boardText, normalizeEndpoint, assembleRules, extractReply } from './core.mjs';
+import { freeService, initAuth } from './auth.mjs';
 
 const $ = id => document.getElementById(id);
 const files = ['SKILL.md', 'REFERENCE.md', 'EXAMPLES.md', 'YAO_CI.md'];
@@ -7,6 +8,7 @@ let rules = '', history = [], lockedContext = null, busy = false, attachment = n
 let imageVersion = 0, imageLoading = false, controller = null, approvedDestination = '';
 const dialog = $('consent-dialog');
 const modeLabels = { time: '时间起卦', manual: '已有卦局', character: '测字', observation: '观物 / 其他' };
+const isFree = () => $('service-mode').value === 'free';
 
 for (const id of ['upper', 'lower']) {
   TRIGRAMS.slice(1).forEach((t, index) => {
@@ -30,7 +32,11 @@ function updateControls() {
   $('casting-fields').disabled = busy || !!lockedContext;
   $('now').disabled = busy || !!lockedContext;
   $('forget-key').disabled = busy;
-  $('send').disabled = busy || !rules || imageLoading;
+  $('send').disabled = busy || !rules || imageLoading || (isFree() && !freeService.allowed);
+  $('service-mode').disabled = busy || !!lockedContext;
+  $('free-panel').hidden = !isFree();
+  $('byok-panel').hidden = isFree();
+  ['github-login', 'logout', 'refresh-quota'].forEach(id => { $(id).disabled = busy; });
   $('pick-image').disabled = busy || imageLoading;
   $('remove-image').disabled = busy;
   $('question').disabled = busy;
@@ -39,6 +45,8 @@ function updateControls() {
   $('messages').setAttribute('aria-busy', String(busy));
   document.querySelectorAll('[data-example]').forEach(b => { b.disabled = busy || !!lockedContext; });
 }
+window.addEventListener('free-auth-change', updateControls);
+$('service-mode').addEventListener('change', () => { approvedDestination = ''; updateControls(); });
 
 async function loadRules() {
   rules = '';
@@ -166,6 +174,10 @@ function confirmDestination(endpoint, model) {
   if (approvedDestination === key) return Promise.resolve(true);
   $('consent-endpoint').textContent = endpoint;
   $('consent-model').textContent = model;
+  $('consent-description').textContent = isFree()
+    ? '免费服务：登录凭据发给 Supabase 后端；后端使用管理员的服务端密钥，转发问题、规则、对话和附图到 api.ccode.vip。每次转发占用今日 1 次，失败也计次。'
+    : '你的 API Key 将直接发给下列接口，问题、完整规则、对话和附图将由该服务商处理。';
+  if (isFree()) $('consent-endpoint').textContent = `${endpoint} → ${freeService.upstream}`;
   return new Promise(resolve => {
     const onClose = () => {
       if (dialog.returnValue === 'confirm') approvedDestination = key;
@@ -197,10 +209,16 @@ $('chat-form').addEventListener('submit', async event => {
   const apiKey = $('api-key').value.trim();
   const model = $('model').value.trim();
   try {
-    endpoint = normalizeEndpoint($('base-url').value);
-    if (!apiKey || /[\r\n]/.test(apiKey)) throw new Error('请填写有效的 API Key（不能含换行）。');
-    if (!model || /[\r\n]/.test(model)) throw new Error('请填写有效的模型 ID。');
+    if (isFree()) {
+      if (!freeService.allowed) throw new Error('请先登录并确认今日仍有免费次数。');
+      endpoint = freeService.endpoint;
+    } else {
+      endpoint = normalizeEndpoint($('base-url').value);
+      if (!apiKey || /[\r\n]/.test(apiKey)) throw new Error('请填写有效的 API Key（不能含换行）。');
+      if (!model || /[\r\n]/.test(model)) throw new Error('请填写有效的模型 ID。');
+    }
     if (history.length >= 40) throw new Error('本局已达 20 轮，请新开一局以控制上下文和费用。');
+    if (isFree() && history.length >= 10) throw new Error('免费模式每局最多 5 轮，请开始新一局。每日次数仍由服务器统一计算。');
     ctx = lockedContext || getContext();
   } catch (error) { status(error.message, true); return; }
 
@@ -209,7 +227,7 @@ $('chat-form').addEventListener('submit', async event => {
   updateControls();
   let timer;
   try {
-    if (!await confirmDestination(endpoint, model)) { status('已取消，未发出 API 请求。'); return; }
+    if (!await confirmDestination(endpoint, isFree() ? freeService.model : model)) { status('已取消，未发出 API 请求。'); return; }
     if (controller.signal.aborted) { status('已停止，未发出 API 请求。'); return; }
     const image = attachment?.dataUrl;
     const text = history.length ? question : contextText(ctx) + '\n\n用户求问：\n' + question;
@@ -221,6 +239,17 @@ $('chat-form').addEventListener('submit', async event => {
     let timedOut = false;
     timer = setTimeout(() => { timedOut = true; controller?.abort(); }, 180000);
     try {
+      if (isFree()) {
+        const data = await freeService.request('chat', [...history, userMessage], controller.signal);
+        if (typeof data.content !== 'string' || !data.content.trim()) throw new Error('免费服务返回正文为空。');
+        history.push(userMessage, { role: 'assistant', content: data.content });
+        lockedContext = ctx;
+        addMessage('assistant', data.content);
+        $('question').value = '';
+        clearImage(); renderBoard();
+        status(data.truncated ? '回复达到输出上限，可在剩余次数内请模型继续。' : '本轮完成 · 每日最多 5 次发送，以服务端计数为准。');
+        return;
+      }
       const response = await fetch(endpoint, {
         method: 'POST', credentials: 'omit', redirect: 'error', referrerPolicy: 'no-referrer',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
@@ -259,6 +288,8 @@ $('chat-form').addEventListener('submit', async event => {
     clearTimeout(timer);
     controller = null;
     busy = false;
+    // If the browser stopped waiting, the server may already have consumed a slot.
+    if (isFree() && freeService.authenticated) void freeService.refreshQuota();
     updateControls();
   }
 });
@@ -357,6 +388,7 @@ document.querySelectorAll('[data-example]').forEach(button => button.addEventLis
 }));
 
 // Clear credentials on navigation / bfcache; never persist secrets or chat.
-window.addEventListener('pagehide', () => { $('api-key').value = ''; approvedDestination = ''; controller?.abort(); });
+window.addEventListener('pagehide', () => { $('api-key').value = ''; approvedDestination = ''; controller?.abort(); freeService.clear(); });
 renderBoard();
 loadRules();
+initAuth();
