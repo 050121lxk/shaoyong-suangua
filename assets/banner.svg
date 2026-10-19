@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="360" viewBox="0 0 1280 360" role="img" aria-labelledby="title desc">
+  <title id="title">邵雍梅花易数 · 观象知意</title>
+  <desc id="desc">米色宣纸背景、青绿色山峦与八卦爻画，配以梅花易数技能标题。</desc>
+  <defs>
+    <linearGradient id="paper" x2="1" y2="1">
+      <stop stop-color="#f7f3e9"/>
+      <stop offset="1" stop-color="#e9e9df"/>
+    </linearGradient>
+    <linearGradient id="mountain" x2="0" y2="1">
+      <stop stop-color="#31594e" stop-opacity=".28"/>
+      <stop offset="1" stop-color="#31594e" stop-opacity=".04"/>
+    </linearGradient>
+  </defs>
+  <rect width="1280" height="360" rx="18" fill="url(#paper)"/>
+  <circle cx="1110" cy="82" r="45" fill="#bf835b" opacity=".12"/>
+  <path d="M650 360L810 164 908 260 1018 129 1160 260 1280 163V360Z" fill="url(#mountain)"/>
+  <path d="M750 360L902 247 1004 312 1130 211 1280 290V360Z" fill="#31594e" opacity=".09"/>
+  <path d="M64 57H1216M64 303H1216" stroke="#31594e" stroke-opacity=".18"/>
+  <g fill="#294d43" transform="translate(82 106)">
+    <rect width="92" height="12" rx="2"/>
+    <rect y="28" width="36" height="12" rx="2"/>
+    <rect x="56" y="28" width="36" height="12" rx="2"/>
+    <rect y="56" width="92" height="12" rx="2"/>
+    <rect y="96" width="36" height="12" rx="2" opacity=".6"/>
+    <rect x="56" y="96" width="36" height="12" rx="2" opacity=".6"/>
+    <rect y="124" width="92" height="12" rx="2" opacity=".6"/>
+    <rect y="152" width="36" height="12" rx="2" opacity=".6"/>
+    <rect x="56" y="152" width="36" height="12" rx="2" opacity=".6"/>
+  </g>
+  <text x="224" y="119" fill="#8a7559" font-family="Georgia, serif" font-size="14" letter-spacing="5">MEIHUA YISHU · AI SKILL</text>
+  <text x="220" y="195" fill="#243e36" font-family="STKaiti, KaiTi, Noto Serif SC, serif" font-size="56" font-weight="600" letter-spacing="6">邵雍梅花易数</text>
+  <text x="224" y="245" fill="#52675e" font-family="Microsoft YaHei, Noto Sans SC, sans-serif" font-size="19" letter-spacing="4">阴阳爻取象 / 体用分析 / 多法互证</text>
+  <g transform="translate(1130 115)">
+    <rect width="56" height="104" rx="4" fill="#a75443"/>
+    <text x="28" y="40" text-anchor="middle" fill="#fff6e5" font-family="STKaiti, KaiTi, serif" font-size="25">观象</text>
+    <text x="28" y="77" text-anchor="middle" fill="#fff6e5" font-family="STKaiti, KaiTi, serif" font-size="25">知意</text>
+  </g>
+</svg>

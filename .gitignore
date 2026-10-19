@@ -1,0 +1,16 @@
+# Python / local environments
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Credentials and local configuration
+.env
+.env.*
+!.env.example
+
+# Local exports and operating-system files
+*.zip
+.DS_Store
+Thumbs.db
+desktop.ini
