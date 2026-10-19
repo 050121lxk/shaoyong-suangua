@@ -20,6 +20,9 @@ test('web build ships public config only and excludes backend, tests and source 
   }
   const config = await readFile(new URL('../_site/config.js', import.meta.url), 'utf8');
   assert.ok(!config.includes('SERVICE_ROLE') && !config.includes('UPSTREAM_API_KEY'));
+  const blankHtml = await readFile(new URL('../_site/index.html', import.meta.url), 'utf8');
+  const blankConfigVersion = blankHtml.match(/config\.js\?v=([a-f0-9]{16})/);
+  assert.ok(blankConfigVersion, 'config uses a content-based cache version');
   const publicKey = 'sb_publishable_test-browser-key';
   execFileSync(process.execPath, ['scripts/build-web.mjs'], { cwd: root, stdio: 'pipe', env: {
     ...process.env, SUPABASE_URL: 'https://test-project.supabase.co', SUPABASE_ANON_KEY: publicKey,
@@ -29,6 +32,8 @@ test('web build ships public config only and excludes backend, tests and source 
   const publicConfig = await readFile(new URL('../_site/config.js', import.meta.url), 'utf8');
   assert.ok(publicConfig.includes(publicKey));
   assert.ok(!publicConfig.includes(upstream) && !publicConfig.includes(service));
+  const configuredHtml = await readFile(new URL('../_site/index.html', import.meta.url), 'utf8');
+  assert.notEqual(configuredHtml.match(/config\.js\?v=([a-f0-9]{16})/)[1], blankConfigVersion[1]);
   for (const key of ['sb_secret_not-public', `head.${Buffer.from('{"role":"service_role"}').toString('base64url')}.sig`]) {
     assert.throws(() => execFileSync(process.execPath, ['scripts/build-web.mjs'], { cwd: root,
       env: { ...process.env, SUPABASE_ANON_KEY: key }, stdio: 'pipe' }));

@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { env } from 'node:process';
 import { build } from 'esbuild';
+import { createHash } from 'node:crypto';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const output = path.join(root, '_site');
@@ -38,4 +39,11 @@ await cp(path.join(root, 'node_modules/lunar-javascript/lunar.js'), path.join(ou
 const license = await readFile(path.join(root, 'node_modules/lunar-javascript/LICENSE'), 'utf8');
 await writeFile(path.join(output, 'vendor/LICENSE-lunar-javascript.txt'), license);
 await writeFile(path.join(output, '.nojekyll'), '');
+// Pages/CDN/browser caches must not pair an old blank config with a new release.
+let html = await readFile(path.join(output, 'index.html'), 'utf8');
+for (const asset of ['style.css', 'vendor/lunar.js', 'config.js', 'app.mjs']) {
+  const hash = createHash('sha256').update(await readFile(path.join(output, asset))).digest('hex').slice(0, 16);
+  html = html.replace(`"./${asset}"`, `"./${asset}?v=${hash}"`);
+}
+await writeFile(path.join(output, 'index.html'), html);
 console.log('Built _site/ with current repository rules and lunar-javascript 1.7.7 (MIT).');
