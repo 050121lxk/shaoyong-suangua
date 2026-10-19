@@ -247,7 +247,7 @@ $('chat-form').addEventListener('submit', async event => {
         addMessage('assistant', data.content);
         $('question').value = '';
         clearImage(); renderBoard();
-        status(data.truncated ? '回复达到输出上限，可在剩余次数内请模型继续。' : '本轮完成 · 每日最多 5 次发送，以服务端计数为准。');
+        status(data.truncated ? `上游报告输出长度已达限制（本站请求预算 ${data.max_output_tokens || '以服务端配置为准'} token，推理内容也可能占用）；可在剩余次数内请模型继续。` : '本轮完成 · 每日最多 5 次发送，以服务端计数为准。');
         return;
       }
       const response = await fetch(endpoint, {

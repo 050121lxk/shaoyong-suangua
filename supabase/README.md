@@ -4,7 +4,7 @@
 
 ## 固定边界
 
-- 上游 `https://api.ccode.vip/v1/chat/completions`，模型 `deepseek-v4.1-flash-1017-g`，每次输出上限 4096 token，不自动重试。
+- 上游 `https://api.ccode.vip/v1/chat/completions`，模型 `deepseek-v4.1-flash-1017-g`，默认请求输出预算 32768 token，不自动重试。此值不是提供商公布的模型最大值；推理内容可能占用预算，实际可用输出也受上游上下文与模型限制约束。
 - 仅已验证的 GitHub／邮箱账号可请求，**每账号每日 5 次、全站每日 100 次**，北京时间零点进入新配额日，每账号至少间隔 10 秒。
 - 服务端先扣次数再转发；上游失败、用户停止等待或断网也可能消耗次数。刷新、新开一局、换浏览器不能重置数据库计数。
 - 全站与用户行按固定顺序 `FOR UPDATE` 加锁，在同一数据库事务中校验并递增。浏览器角色无表权限和配额函数执行权限。
@@ -68,8 +68,11 @@ npx supabase functions deploy free-chat --no-verify-jwt --use-api
 | `UPSTREAM_API_KEY` | 新生成的上游专用 Key |
 | `ALLOWED_ORIGINS` | `https://050121lxk.github.io`（Origin 没有项目路径、没有末尾斜线） |
 | `FREE_SERVICE_ENABLED` | 验收前 `false`，开通时 `true` |
+| `FREE_MAX_OUTPUT_TOKENS` | 可选，默认 `32768`；接受 `4096`–`65536` 的整数，仅管理员可调，须先确认上游支持及费用预算 |
 
 Secrets 设置后通常不用重新部署。若使用 CLI，请通过忽略的 `.env` 文件导入，不要将秘密写进命令行历史、截图或 Git 提交。紧急停用：把 `FREE_SERVICE_ENABLED` 设为 `false`，或撤销上游 Key。
+
+正文按原文返回，不进行字符裁切；上游返回 `finish_reason: length` 时网页提示可能截断及本次请求预算。长回复可原样加入追问历史（助手每条资源保护阈值 30 万字符，用户输入仍限 2.4 万字符；上游响应体最多 2 MiB）。这些是内存安全边界，不是模型 token 上限。后端非流式上游等待仍为 115 秒，因此提高预算并不保证超长推理能在云端时限内完成，也不自动发起付费续写。
 
 ## 5. 构建并发布网页
 

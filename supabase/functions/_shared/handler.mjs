@@ -1,6 +1,14 @@
 export const UPSTREAM = 'https://api.ccode.vip/v1/chat/completions';
 export const MODEL = 'deepseek-v4.1-flash-1017-g';
 export const MAX_BODY = 8 * 1024 * 1024;
+export const DEFAULT_MAX_OUTPUT_TOKENS = 32768;
+// Resource guard, not a display slice; leave room for long ASCII/CJK completions.
+export const MAX_REPLY_CHARS = 300000;
+
+export function outputTokenLimit(value) {
+  const parsed = typeof value === 'string' && /^\d+$/.test(value) ? Number(value) : NaN;
+  return Number.isSafeInteger(parsed) && parsed >= 4096 && parsed <= 65536 ? parsed : DEFAULT_MAX_OUTPUT_TOKENS;
+}
 
 export async function readLimited(response, limit) {
   const reader = response.body?.getReader();
@@ -28,7 +36,7 @@ export function validateMessages(messages) {
     const role = index % 2 === 0 ? 'user' : 'assistant';
     if (message?.role !== role) throw new Error('role');
     const content = message.content;
-    if (typeof content === 'string' && content.trim() && content.length <= 24000) return { role, content };
+    if (typeof content === 'string' && content.trim() && content.length <= (role === 'assistant' ? MAX_REPLY_CHARS : 24000)) return { role, content };
     if (role !== 'user' || !Array.isArray(content) || content.length !== 2) throw new Error('content');
     const [text, image] = content;
     if (text?.type !== 'text' || typeof text.text !== 'string' || !text.text.trim() || text.text.length > 24000) throw new Error('text');
@@ -41,6 +49,7 @@ export function validateMessages(messages) {
 // Dependency injection enables tests without secrets, live auth, or paid API requests.
 export function createHandler({ env, rules, fetcher = fetch }) {
   const origins = (env('ALLOWED_ORIGINS') || '').split(',').map(v => v.trim()).filter(Boolean);
+  const maxOutputTokens = outputTokenLimit(env('FREE_MAX_OUTPUT_TOKENS'));
   return async request => {
     const origin = request.headers.get('origin');
     const cors = { 'Vary': 'Origin', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' };
@@ -97,7 +106,7 @@ export function createHandler({ env, rules, fetcher = fetch }) {
       try {
         const upstream = await fetcher(UPSTREAM, {
           method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${upstreamKey}` },
-          body: JSON.stringify({ model: MODEL, messages: [{ role: 'system', content: rules + '\n网页免费版每用户每天仅五次发送。请将必要追问集中在一轮内（不要为凑次数省略依据），信息足够则及时给结论与可核对卦象；不要保证五轮内一定能断清。' }, ...messages], max_tokens: 4096, stream: false }),
+          body: JSON.stringify({ model: MODEL, messages: [{ role: 'system', content: rules + '\n网页免费版每用户每天仅五次发送。请将必要追问集中在一轮内（不要为凑次数省略依据），信息足够则及时给结论与可核对卦象；不要保证五轮内一定能断清。' }, ...messages], max_tokens: maxOutputTokens, stream: false }),
           // Leave headroom for auth/RPC and the hosted free plan's 150s idle limit.
           redirect: 'error', signal: AbortSignal.timeout(115000),
         });
@@ -105,12 +114,12 @@ export function createHandler({ env, rules, fetcher = fetch }) {
           await upstream.body?.cancel();
           return reply(502, { error: 'upstream_failed', quota });
         }
-        const data = JSON.parse(await readLimited(upstream, 600000));
+        const data = JSON.parse(await readLimited(upstream, 2 * 1024 * 1024));
         const content = data.choices?.[0]?.message?.content;
-        if (typeof content !== 'string' || !content.trim() || content.length > 24000) return reply(502, { error: 'invalid_upstream_reply', quota });
+        if (typeof content !== 'string' || !content.trim() || content.length > MAX_REPLY_CHARS) return reply(502, { error: 'invalid_upstream_reply', quota });
         // Do not return raw upstream JSON/errors; they may reflect credentials.
         if (content.includes(upstreamKey) || content.includes(serviceKey)) return reply(502, { error: 'invalid_upstream_reply', quota });
-        return reply(200, { content, truncated: data.choices?.[0]?.finish_reason === 'length', quota });
+        return reply(200, { content, truncated: data.choices?.[0]?.finish_reason === 'length', max_output_tokens: maxOutputTokens, quota });
       } catch { return reply(502, { error: 'upstream_unavailable', quota }); }
     } catch { return reply(503, { error: 'service_unavailable' }); }
   };
