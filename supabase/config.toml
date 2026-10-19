@@ -1,5 +1,9 @@
 project_id = "shaoyong-suangua"
 
+[auth]
+site_url = "https://050121lxk.github.io/shaoyong-suangua/"
+additional_redirect_urls = ["https://050121lxk.github.io/shaoyong-suangua/"]
+
 [functions.free-chat]
 # New signing-key projects can reject valid JWTs at the legacy gateway.
 # The function ALWAYS verifies the bearer token with Auth /user before doing anything.

@@ -93,6 +93,10 @@ export async function initAuth() {
       persistSession: false, autoRefreshToken: true, detectSessionInUrl: true, flowType: 'implicit',
     } });
     configured = true;
+    if (!config.TURNSTILE_SITE_KEY) {
+      $('email-login').disabled = true;
+      $('email-form').querySelector('.field-help').textContent = '邮箱登录暂未开放（待配置邮件服务和人机验证），请先使用 GitHub 登录。';
+    }
     client.auth.onAuthStateChange((_event, value) => {
       session = value; quota = null; changed();
       // Never await auth methods from this callback (SDK lock).

@@ -14,7 +14,7 @@
 
 ## 1. 创建 Supabase 项目
 
-在 https://supabase.com/dashboard 创建项目并等待数据库就绪。记录 Project Ref、Project URL 与 **anon（公开）Key**。不要将 `service_role`、`sb_secret_...` 或管理访问令牌填入网页配置。
+在 https://supabase.com/dashboard 创建项目并等待数据库就绪。记录 Project Ref、Project URL 与 **anon / publishable（公开）Key**。前端变量 `SUPABASE_ANON_KEY` 兼容 `sb_publishable_...`。不要将 `service_role`、`sb_secret_...` 或管理访问令牌填入网页配置。
 
 目前后端使用平台预置的 `SUPABASE_URL`、`SUPABASE_ANON_KEY`、`SUPABASE_SERVICE_ROLE_KEY`。不要手工新增 `SUPABASE_` 前缀的 Secrets（平台保留）。
 
@@ -47,13 +47,15 @@
 npm ci
 npm test
 npm run build:backend
-npx supabase login
+npx supabase --agent no --output-format text login
 npx supabase link --project-ref 你的项目REF
 npx supabase db push
 npx supabase functions deploy free-chat --no-verify-jwt --use-api
 ```
 
 `--use-api` 用于无 Docker 的云端打包。也可在 SQL Editor 执行 `migrations/202610170001_free_quota.sql`，但不要再重复建一个不同版本的配额函数。`rules.json` 是完整四文档提示词的生成产物，修改规则后须重新运行 `build:backend` 并重新部署函数。
+
+若从 OpenCode 打开的终端继承代理环境并报 `Cannot prompt for input in JSON output mode`，上述登录参数强制使用交互文本模式；需在独立 PowerShell / Windows Terminal 中执行。已验证 CLI 版本为 `2.121.0`。`config.toml` 仅声明正式站点 URL 和精确回调白名单；运行 `config diff` 预览后再 `config push`，保留后台设置的 GitHub、邮箱与私钥配置，不要推送整份默认配置覆盖它们。
 
 `verify_jwt=false` 只关闭旧网关校验，**函数自己对每次请求调用 Supabase Auth 验证 Bearer 令牌与确认邮箱状态**；未登录请求不会触发付费上游。不可去掉函数内校验。
 

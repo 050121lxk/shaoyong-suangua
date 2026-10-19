@@ -20,6 +20,15 @@ test('web build ships public config only and excludes backend, tests and source 
   }
   const config = await readFile(new URL('../_site/config.js', import.meta.url), 'utf8');
   assert.ok(!config.includes('SERVICE_ROLE') && !config.includes('UPSTREAM_API_KEY'));
+  const publicKey = 'sb_publishable_test-browser-key';
+  execFileSync(process.execPath, ['scripts/build-web.mjs'], { cwd: root, stdio: 'pipe', env: {
+    ...process.env, SUPABASE_URL: 'https://test-project.supabase.co', SUPABASE_ANON_KEY: publicKey,
+    FREE_CHAT_URL: 'https://test-project.supabase.co/functions/v1/free-chat', ALLOWED_ORIGIN: 'https://example.com',
+    TURNSTILE_SITE_KEY: '', UPSTREAM_API_KEY: upstream, SUPABASE_SERVICE_ROLE_KEY: service,
+  } });
+  const publicConfig = await readFile(new URL('../_site/config.js', import.meta.url), 'utf8');
+  assert.ok(publicConfig.includes(publicKey));
+  assert.ok(!publicConfig.includes(upstream) && !publicConfig.includes(service));
   for (const key of ['sb_secret_not-public', `head.${Buffer.from('{"role":"service_role"}').toString('base64url')}.sig`]) {
     assert.throws(() => execFileSync(process.execPath, ['scripts/build-web.mjs'], { cwd: root,
       env: { ...process.env, SUPABASE_ANON_KEY: key }, stdio: 'pipe' }));
