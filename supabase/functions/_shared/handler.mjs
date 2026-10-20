@@ -98,7 +98,8 @@ export function createHandler({ env, rules, fetcher = fetch }) {
       if (!quotaResponse.ok) return reply(503, { error: 'quota_unavailable' });
       const quota = JSON.parse(await readLimited(quotaResponse, 16000));
       if (!Number.isInteger(quota.used) || quota.used < 0 || quota.used > 5 || quota.limit !== 5 ||
-          typeof quota.allowed !== 'boolean' || typeof quota.global_available !== 'boolean') return reply(503, { error: 'quota_unavailable' });
+          typeof quota.allowed !== 'boolean' || typeof quota.global_available !== 'boolean' ||
+          !Number.isInteger(quota.global_remaining) || quota.global_remaining < 0 || quota.global_remaining > 100) return reply(503, { error: 'quota_unavailable' });
       if (body.action === 'quota') return reply(200, { quota, model: MODEL, upstream: UPSTREAM });
       if (!quota.allowed) return reply(429, { error: quota.reason || 'quota_exhausted', quota });
 

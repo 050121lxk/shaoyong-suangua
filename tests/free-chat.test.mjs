@@ -24,7 +24,7 @@ function fixture({ used = 0, global = 0, upstreamStatus = 200, confirmed = true,
       assert.equal(body.p_user, 'server-user-id');
       const allowed = state.used < 5 && state.global < 100;
       if (allowed && body.p_consume) { state.used++; state.global++; }
-      return json({ allowed, used: state.used, limit: 5, global_available: state.global < 100,
+      return json({ allowed, used: state.used, limit: 5, global_available: state.global < 100, global_remaining: 100 - state.global,
         ...(!allowed ? { reason: state.used >= 5 ? 'user_limit' : 'global_limit' } : {}) });
     }
     assert.equal(url, UPSTREAM);
@@ -113,8 +113,10 @@ test('upstream failure counts, raw provider error is never returned', async () =
   assert.ok(!(await response.text()).includes(settings.UPSTREAM_API_KEY));
 });
 test('quota display does not consume; verified login and database fail closed', async () => {
-  const f = fixture();
-  assert.equal((await f.handler(req({ action: 'quota' }))).status, 200);
+  const f = fixture({ global: 37 });
+  const quotaReply = await f.handler(req({ action: 'quota' }));
+  assert.equal(quotaReply.status, 200);
+  assert.equal((await quotaReply.json()).quota.global_remaining, 63);
   assert.equal(f.state.used, 0);
   assert.equal((await fixture({ confirmed: false }).handler(req())).status, 403);
   const broken = fixture({ failQuota: true });

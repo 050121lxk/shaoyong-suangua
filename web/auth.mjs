@@ -20,7 +20,9 @@ function changed() {
   $('auth-actions').hidden = !configured || !!session;
   $('signed-in').hidden = !session;
   if (session) $('auth-status').textContent = '已登录 · ' + (session.user.email || 'GitHub 用户');
-  $('quota-status').textContent = quota ? `今日已用 ${quota.used} / 5 次${quota.global_available ? '' : ' · 全站额度已用完'}` : '配额尚未获取（不可发送）';
+  $('quota-status').textContent = quota
+    ? `今日已用 ${quota.used} / 5 次 · 全站今日剩余 ${quota.global_remaining} / 100 次${quota.global_available ? '' : '（已用完）'}`
+    : '配额尚未获取（不可发送）';
   window.dispatchEvent(new Event('free-auth-change'));
 }
 
