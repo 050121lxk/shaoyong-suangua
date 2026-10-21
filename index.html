@@ -4,99 +4,79 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="referrer" content="no-referrer">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://challenges.cloudflare.com; frame-src https://challenges.cloudflare.com; style-src 'self'; img-src 'self' data: blob:; connect-src 'self' https: http://localhost:* http://127.0.0.1:* http://[::1]:*; object-src 'none'; base-uri 'none'; form-action 'none'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://challenges.cloudflare.com; frame-src https://challenges.cloudflare.com; style-src 'self'; img-src 'self' data: blob:; connect-src 'self' https: http://localhost:* http://127.0.0.1:*; object-src 'none'; base-uri 'none'; form-action 'none'">
   <meta name="description" content="在线体验梅花易数 AI Skill，支持登录免费体验与自带 API Key。浏览器本地排卦，完整规则随仓库更新。">
   <title>观象 · 梅花易数在线体验</title>
   <link rel="icon" href="./icon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="./style.css?v=cf221b349b65196c">
+  <link rel="stylesheet" href="./style.css?v=725911ef0058d81f">
   <script src="./vendor/lunar.js?v=9750324bfe1aa63c" defer></script>
   <script src="./config.js?v=e8ee6eb7adb9051c" defer></script>
-  <script src="./app.mjs?v=23188be95f86d3d4" type="module"></script>
+  <script src="./app.mjs?v=80c25335c51a9248" type="module"></script>
 </head>
 <body>
   <a href="#question" class="skip-link">跳到提问</a>
   <header class="topbar">
-    <a class="brand" href="./" aria-label="观象首页"><span class="brand-mark" aria-hidden="true">☷</span><span>观象 <i>GUAN XIANG</i></span></a>
-    <nav aria-label="导航"><a href="#workspace">开始体验</a><a href="#guide">使用须知</a><a href="https://github.com/050121lxk/shaoyong-suangua" target="_blank" rel="noopener noreferrer">GitHub ↗</a></nav>
+    <a class="brand" href="./" aria-label="观象首页"><span class="brand-mark" aria-hidden="true">☷</span>观象<small>梅花易数在线体验</small></a>
+    <a href="https://github.com/050121lxk/shaoyong-suangua" target="_blank" rel="noopener noreferrer">GitHub ↗</a>
   </header>
 
   <main>
-    <section class="hero" aria-labelledby="hero-title">
-      <div class="hero-copy">
-        <p class="eyebrow"><span></span> 梅花易数 · AI SKILL PLAYGROUND</p>
-        <h1 id="hero-title">从一念起，<br>观万物之<span>象。</span></h1>
-        <p class="hero-description">让阴阳有结构，让推演有依据。<br>登录免费体验，或带上自己的 API Key，探索完整的梅花易数规则。</p>
-        <div class="hero-tags"><span>本地排卦</span><span>自带密钥</span><span>规则可查</span></div>
-      </div>
-      <div class="landscape" aria-hidden="true">
-        <div class="sun"></div><div class="mountain mountain-back"></div><div class="mountain mountain-middle"></div><div class="mountain mountain-front"></div>
-        <div class="landscape-text">观象知意<br>循理而推</div><div class="seal">梅花<br>心易</div>
-        <span class="landscape-caption">数 生 象 · 象 明 意</span>
-      </div>
-    </section>
-
-    <aside class="culture-notice"><span aria-hidden="true">◎</span><p><strong>一种传统文化与 AI 提示词的体验，而非未来的保证。</strong>卦象不具备经科学验证的预测能力，请勿用于替代医疗、法律或投资决策。</p></aside>
-
     <section id="workspace" class="workspace" aria-label="在线体验工作区">
       <aside class="settings-panel">
-        <div class="section-heading"><span class="step">01</span><h2>选择体验方式</h2><span class="local-badge">密钥不进网页</span></div>
-        <label for="service-mode" class="service-mode-label">模型服务</label>
-        <select id="service-mode"><option value="free">登录免费体验 · 每日 5 次</option><option value="byok">自带 API Key · 原有模式</option></select>
+        <h2>模型服务</h2>
+        <label for="service-mode" class="sr-only">模型服务</label>
+        <select id="service-mode"><option value="free">登录免费体验 · 每日 5 次</option><option value="byok">自带 API Key</option></select>
+
         <section id="free-panel" class="auth-panel" aria-label="免费服务登录">
-          <p class="section-description">deepseek-v4.1-flash-1017-g<br>每账号每日 5 次，全站每日 100 次；北京时间零点更新。发送计次，失败不退回。</p>
+          <p class="hint">deepseek-v4.1-flash-1017-g · 每账号每日 5 次，全站 100 次，北京时间零点重置。发送即计次，失败不退回。</p>
           <p id="auth-status" role="status">正在检查免费服务配置…</p>
           <div id="auth-actions" hidden>
-            <button type="button" id="github-login" class="secondary-button">使用 GitHub 登录</button>
+            <button type="button" id="github-login" class="secondary-button wide">使用 GitHub 登录</button>
             <form id="email-form" autocomplete="off">
               <label for="login-email">邮箱 · 首次验证即注册</label>
               <input id="login-email" type="email" autocomplete="email" placeholder="you@example.com" maxlength="254" required>
               <p class="captcha-label">人机验证</p>
               <div id="captcha-widget"></div>
               <input id="captcha-token" type="hidden">
-              <p class="field-help">邮箱登录需管理员启用验证码；验证服务不可用时请改用 GitHub。</p>
-              <button type="submit" id="email-login" class="secondary-button">发送一次性验证码</button>
+              <p class="hint">邮箱登录需管理员启用验证码；不可用时请改用 GitHub。</p>
+              <button type="submit" id="email-login" class="secondary-button wide">发送一次性验证码</button>
             </form>
             <form id="otp-form" hidden autocomplete="off">
               <label for="email-otp">邮箱验证码</label>
               <input id="email-otp" type="text" inputmode="numeric" pattern="[0-9]{6,10}" maxlength="10" autocomplete="one-time-code" required>
-              <button type="submit" class="secondary-button">验证并登录</button>
+              <button type="submit" class="secondary-button wide">验证并登录</button>
             </form>
           </div>
           <div id="signed-in" hidden><p id="quota-status" role="status"></p><button id="refresh-quota" type="button" class="text-button">刷新次数</button> · <button id="logout" type="button" class="text-button">退出登录</button></div>
-          <p class="field-help">登录后会话仅留在本页。免费请求经 Supabase 后端转发到 api.ccode.vip；服务商会收到问题、历史、规则和附图。登录服务处理账号资料，数据库仅保存配额，不保存聊天。</p>
         </section>
+
         <div id="byok-panel" hidden>
-        <p class="section-description">支持 OpenAI 兼容的 Chat Completions 接口。</p>
-        <form id="settings-form" autocomplete="off">
-          <fieldset id="connection-fields">
-            <label for="base-url">API 接口地址</label>
-            <input id="base-url" type="url" value="https://api.openai.com/v1" placeholder="https://api.example.com/v1" spellcheck="false" required>
-            <p class="field-help">填 Base URL 或完整的 /chat/completions 地址。</p>
-            <div class="label-row"><label for="api-key">API Key</label><button type="button" id="forget-key" class="text-button">清除密钥</button></div>
-            <input id="api-key" type="password" placeholder="输入你自己的 API Key" autocomplete="off" autocapitalize="off" spellcheck="false" required>
-            <p class="field-help">不保存到浏览器存储，不发给本项目服务器。</p>
-            <label for="model">模型名称</label>
-            <input id="model" type="text" placeholder="例如 gpt-4.1 / 你的模型 ID" spellcheck="false" required maxlength="160">
-            <div class="label-row output-label"><label for="max-tokens">最大输出 token</label><span class="optional">不含规则输入</span></div>
-            <select id="max-tokens"><option value="4096" selected>4,096 · 默认</option><option value="8192">8,192 · 较完整</option><option value="16384">16,384 · 推理模型建议</option></select>
-          </fieldset>
-        </form>
-        <div class="privacy-card"><span aria-hidden="true">↗</span><p>点击发送，Key 将作为认证凭据<strong>直接发给你填写的接口</strong>。问题、图片、历史对话与规则也会发给该服务商，请只使用可信地址。</p></div>
+          <form id="settings-form" autocomplete="off">
+            <fieldset id="connection-fields">
+              <label for="base-url">接口地址 · OpenAI 兼容</label>
+              <input id="base-url" type="url" value="https://api.openai.com/v1" placeholder="https://api.example.com/v1" spellcheck="false" required>
+              <div class="label-row"><label for="api-key">API Key</label><button type="button" id="forget-key" class="text-button">清除</button></div>
+              <input id="api-key" type="password" placeholder="只存在本页内存" autocomplete="off" autocapitalize="off" spellcheck="false" required>
+              <label for="model">模型</label>
+              <input id="model" type="text" placeholder="模型 ID" spellcheck="false" required maxlength="160">
+              <label for="max-tokens">最大输出 token</label>
+              <select id="max-tokens"><option value="4096" selected>4,096</option><option value="8192">8,192</option><option value="16384">16,384 · 推理模型</option></select>
+            </fieldset>
+          </form>
+          <p class="hint">Key 直接发给你填写的接口，不经过本站。</p>
         </div>
 
-        <div class="panel-divider"></div>
-        <div class="section-heading"><span class="step">02</span><h2>确定起卦方式</h2></div>
+        <h2 class="panel-heading">起卦</h2>
         <fieldset id="casting-fields">
-          <label for="casting-mode">体验方式</label>
+          <label for="casting-mode">方式</label>
           <select id="casting-mode">
-            <option value="time">时间起卦 · 本地计算</option>
-            <option value="manual">已有卦局 · 直接沿用</option>
-            <option value="character">测字 · 由模型按规则分析</option>
-            <option value="observation">观物 / 其他 · 先描述征兆</option>
+            <option value="time">时间起卦</option>
+            <option value="manual">已有卦局</option>
+            <option value="character">测字</option>
+            <option value="observation">观物 / 其他</option>
           </select>
-          <div class="label-row time-label"><label for="casting-time">求问时刻 · 北京时间</label><button type="button" id="now" class="text-button">取现在</button></div>
+          <div class="label-row"><label for="casting-time">求问时刻 · 北京时间</label><button type="button" id="now" class="text-button">取现在</button></div>
           <input id="casting-time" type="datetime-local" min="1901-01-01T00:00" max="2099-12-31T23:59" required>
-          <p class="field-help">无论你在哪个时区，此处均按 UTC+8 读取。</p>
           <div id="manual-fields" class="manual-grid" hidden>
             <div><label for="upper">上卦</label><select id="upper"></select></div>
             <div><label for="lower">下卦</label><select id="lower"></select></div>
@@ -104,51 +84,51 @@
           </div>
         </fieldset>
         <div id="board" class="board-preview" aria-live="polite"></div>
-        <p id="casting-hint" class="field-help">同一件事的追问保留原卦，开始新事请点击「新一局」。</p>
+        <p id="casting-hint" class="hint">同一件事追问保留原卦；换一件事请点「新一局」。</p>
       </aside>
 
       <section class="chat-panel" aria-labelledby="chat-title">
-        <div class="chat-header"><div><p class="eyebrow">YOUR PERSONAL READING</p><h2 id="chat-title">一事一问，循象而观</h2></div><button type="button" class="secondary-button" id="reset">↺ 新一局</button></div>
-        <div class="rule-status"><span id="rule-dot" class="status-dot"></span><span id="rule-status" role="status">正在加载仓库规则…</span><button type="button" id="retry-rules" class="text-button" hidden>重新加载</button></div>
+        <div class="chat-header">
+          <h2 id="chat-title">一事一问</h2>
+          <span class="rule-status"><span id="rule-dot" class="status-dot"></span><span id="rule-status" role="status">正在加载规则…</span><button type="button" id="retry-rules" class="text-button" hidden>重新加载</button></span>
+          <button type="button" class="secondary-button" id="reset">新一局</button>
+        </div>
         <div id="messages" class="messages" aria-label="对话记录" aria-busy="false">
-          <div id="welcome" class="welcome">
-            <div class="welcome-symbol" aria-hidden="true">☶</div>
-            <h3>先有一念，再起一卦。</h3>
-            <p>写下具体问题，或描述你想解读的字与征兆。<br>信息不足时，模型会先与你一起厘清。</p>
-            <div class="example-prompts">
-              <button type="button" data-example="job"><span>问事 · 求职</span>看看这次求职的进展 ↗</button>
-              <button type="button" data-example="character"><span>测字 · 取象</span>从一个「安」字开始 ↗</button>
-              <button type="button" data-example="guess"><span>射覆 · 已有卦局</span>沿用原卦，直接猜物 ↗</button>
-            </div>
-          </div>
+          <p id="welcome" class="welcome">写下具体问题，或描述要测的字、看到的征兆。信息不足时，模型会先问你。</p>
         </div>
         <div id="request-status" class="request-status" role="status" aria-live="polite"></div>
         <form id="chat-form" class="composer">
           <div id="attachment" class="attachment" hidden><img id="attachment-preview" alt="待发送图片预览"><span id="attachment-name"></span><button id="remove-image" type="button" class="text-button">移除</button></div>
           <label for="question" class="sr-only">你的问题或补充信息</label>
-          <textarea id="question" rows="3" maxlength="8000" placeholder="此刻，你想问什么？尽量描述具体事项，不必提供真实姓名等隐私信息。" required></textarea>
-          <div class="composer-actions"><div><button id="pick-image" class="text-button image-button" type="button">＋ 手写字 / 图片</button><input id="image-file" type="file" accept="image/jpeg,image/png,image/webp" hidden><span class="image-help">需视觉模型</span></div><div class="send-actions"><button id="stop" type="button" class="secondary-button" hidden>停止</button><button id="send" type="submit" class="primary-button" disabled>发送问卦 <span aria-hidden="true">↗</span></button></div></div>
-          <p class="composer-note">完整规则会随请求发送，输入量较大，可能产生较高费用。Ctrl / ⌘ + Enter 发送。</p>
+          <textarea id="question" rows="3" maxlength="8000" placeholder="此刻想问什么？不必提供真实姓名等隐私信息。" required></textarea>
+          <div class="composer-actions">
+            <button id="pick-image" class="text-button" type="button">＋ 图片</button><input id="image-file" type="file" accept="image/jpeg,image/png,image/webp" hidden>
+            <span class="composer-note">Ctrl / ⌘ + Enter 发送</span>
+            <button id="stop" type="button" class="secondary-button" hidden>停止</button>
+            <button id="send" type="submit" class="primary-button" disabled>发送</button>
+          </div>
         </form>
       </section>
     </section>
 
-    <section id="guide" class="guide" aria-labelledby="guide-title">
-      <div class="guide-intro"><p class="eyebrow">BEFORE YOU BEGIN</p><h2 id="guide-title">把边界说在前面。</h2><p>规则公开、密钥自备，推演过程可对照。</p></div>
-      <div class="guide-cards">
-        <article><span>01 / 隐私</span><h3>密钥只在需要的地方</h3><p>免费服务的 Key 仅放在 Supabase 服务端，登录后由后端转发。自带 Key 模式直接请求你的接口。聊天不写入本项目数据库，服务商仍可能按其政策留存；不要发送隐私资料。</p></article>
-        <article><span>02 / 兼容</span><h3>免费与自带 Key 分开</h3><p>免费服务仅限验证后的 GitHub／邮箱账号，每账号每天 5 次、全站 100 次，不能保证五次内解完一卦。自带 Key 需接口支持跨域和 Chat Completions，不受免费配额影响。</p></article>
-        <article><span>03 / 能力</span><h3>完整规则，不等于完整工具</h3><p>四份规则全文随请求加载，建议模型有至少 128K 上下文（64K 可能不足）。历法在本地算，解释由模型生成；没有 OpenCode 的终端、检索工具或真实环境感知，不能自动观察外应。</p></article>
-      </div>
-      <details class="faq"><summary>发送失败、余额消耗或图片无法识别怎么办？</summary><p>401 / 403：检查密钥和模型权限。404：检查接口路径和模型 ID。429：检查余额、速率和配额。网络错误：可能是 CORS、DNS、TLS 或浏览器限制。上下文不足：换大上下文模型或新开一局；完整规则和历史每轮都会计入输入费用。图片会在本地缩放、重编码后发送给所选服务商，不能保证文字识别无误。取消请求也不代表服务商已停止计费。本页不会自动重试收费请求。</p></details>
-    </section>
+    <details class="notes">
+      <summary>说明、隐私与常见问题</summary>
+      <ul>
+        <li>传统文化与 AI 提示词体验，卦象不具备经科学验证的预测能力，勿替代医疗、法律或投资决策。</li>
+        <li>免费服务：登录后经 Supabase 后端转发到 api.ccode.vip，服务端 Key 不进网页；数据库只存配额，不存聊天。每局最多 5 轮，单次回复最长约 140 秒。</li>
+        <li>自带 Key：浏览器直连你的接口，需支持跨域与 Chat Completions 流式输出（不支持时自动按整段读取）。每轮附带完整规则约 4.9 万字符，建议 128K 以上上下文。</li>
+        <li>问题、历史、规则和附图会发给模型服务商，可能被其按政策留存。Key、会话、对话只存在本页内存，刷新即清空。</li>
+        <li>图片在本地缩放到 1600px 并重新编码后发送，需视觉模型；识字不保证准确。</li>
+        <li>回答未写完时可发送「继续」。停止或断线时已输出部分会保留，但服务商可能已计费。401/403 查 Key 与权限，404 查地址与模型，429 查余额与速率，网络错误多为跨域或 TLS 问题。</li>
+      </ul>
+    </details>
   </main>
-  <footer><div class="footer-brand">观象 <span>梅花易数 · AI Skill</span></div><p>出自「梅花长手」改编体系 · 以邵雍《梅花易数》为底本</p><a href="https://github.com/050121lxk/shaoyong-suangua" target="_blank" rel="noopener noreferrer">规则与源码 ↗</a></footer>
+  <footer>出自「梅花长手」改编体系 · 以邵雍《梅花易数》为底本 · <a href="https://github.com/050121lxk/shaoyong-suangua" target="_blank" rel="noopener noreferrer">规则与源码</a></footer>
 
   <dialog id="consent-dialog" aria-labelledby="consent-title">
-    <h2 id="consent-title">确认请求去向</h2><p id="consent-description">请核对以下地址。你的 API Key 将直接发给该接口，问题、完整规则、对话和附图将由其模型处理。</p>
+    <h2 id="consent-title">确认请求去向</h2><p id="consent-description">请核对以下地址。</p>
     <dl><dt>接收接口</dt><dd id="consent-endpoint"></dd><dt>模型</dt><dd id="consent-model"></dd></dl>
-    <p class="consent-warning">本项目无法验证第三方接口是否可信。仅使用你信任的服务商；首次发送及更换地址或模型时会再次确认。每轮含完整规则，可能消耗较多 token。</p>
+    <p class="consent-warning">首次发送及更换地址或模型时会再次确认。每轮含完整规则，可能消耗较多 token。</p>
     <div class="dialog-actions"><button id="consent-cancel" type="button" class="secondary-button">取消</button><button id="consent-confirm" type="button" class="primary-button">确认并发送</button></div>
   </dialog>
 </body>
