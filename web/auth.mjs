@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import { sseData } from '../supabase/functions/_shared/sse.mjs';
 
 const $ = id => document.getElementById(id);
 const config = globalThis.SHAOYONG_CONFIG || {};
@@ -14,6 +15,7 @@ const ERROR_TEXT = {
   upstream_failed: '模型接口出错，本次已计入次数，请勿反复重试。', upstream_unavailable: '上游连接失败或超时，本次已计入次数。',
   invalid_upstream_reply: '模型没有返回有效正文，本次已计入次数。', invalid_messages: '本局内容过长或附图过大，请开始新一局或移除图片。',
   origin_denied: '此站点未被管理员授权使用免费服务。',
+  time_limit: '模型在免费服务的 140 秒时限内没有输出正文，本次已计入次数。',
 };
 
 function changed() {
@@ -50,11 +52,27 @@ export const freeService = {
       headers: { 'Content-Type': 'application/json', apikey: config.SUPABASE_ANON_KEY, Authorization: `Bearer ${data.session.access_token}` },
       body: JSON.stringify({ action, ...(action === 'chat' ? { messages } : {}) }),
     });
+    if (response.ok && (response.headers.get('content-type') || '').startsWith('text/event-stream')) return this.events(response);
     let body;
     try { body = await response.json(); } catch { throw new Error('免费服务返回格式异常。'); }
     if (body.quota) { quota = body.quota; changed(); }
     if (!response.ok) throw new Error(ERROR_TEXT[body.error] || `免费服务请求失败（HTTP ${response.status}）。`);
     return body;
+  },
+  // Server events: start (quota) → thinking / delta… → done | error.
+  async *events(response) {
+    for await (const data of sseData(response.body, 16 * 1024 * 1024)) {
+      let event;
+      try { event = JSON.parse(data); } catch { continue; }
+      if (event.quota) { quota = event.quota; changed(); }
+      if (event.type === 'error') {
+        const error = new Error(ERROR_TEXT[event.error] || '免费服务中断，本次已计入次数。');
+        // Server rejected the reply as a whole (e.g. reflected secret): discard any partial text.
+        error.discard = true;
+        throw error;
+      }
+      yield event;
+    }
   },
   async refreshQuota() {
     let notice;
@@ -97,7 +115,7 @@ export async function initAuth() {
     configured = true;
     if (!config.TURNSTILE_SITE_KEY) {
       $('email-login').disabled = true;
-      $('email-form').querySelector('.field-help').textContent = '邮箱登录暂未开放（待配置邮件服务和人机验证），请先使用 GitHub 登录。';
+      $('email-form').querySelector('.hint').textContent = '邮箱登录暂未开放（待配置邮件服务和人机验证），请先使用 GitHub 登录。';
     }
     client.auth.onAuthStateChange((_event, value) => {
       session = value; quota = null; changed();

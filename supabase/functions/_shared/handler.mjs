@@ -1,4 +1,8 @@
+import { completionChunks, streamDelta } from './sse.mjs';
+
 export const UPSTREAM = 'https://api.ccode.vip/v1/chat/completions';
+// Total budget per request; hosted free plan wall clock is 150s.
+export const REQUEST_DEADLINE_MS = 140000;
 export const MODEL = 'deepseek-v4.1-flash-1017-g';
 export const MAX_BODY = 8 * 1024 * 1024;
 export const DEFAULT_MAX_OUTPUT_TOKENS = 32768;
@@ -47,10 +51,11 @@ export function validateMessages(messages) {
 }
 
 // Dependency injection enables tests without secrets, live auth, or paid API requests.
-export function createHandler({ env, rules, fetcher = fetch }) {
+export function createHandler({ env, rules, fetcher = fetch, deadlineMs = REQUEST_DEADLINE_MS }) {
   const origins = (env('ALLOWED_ORIGINS') || '').split(',').map(v => v.trim()).filter(Boolean);
   const maxOutputTokens = outputTokenLimit(env('FREE_MAX_OUTPUT_TOKENS'));
   return async request => {
+    const started = Date.now();
     const origin = request.headers.get('origin');
     const cors = { 'Vary': 'Origin', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' };
     if (origin && origins.includes(origin)) Object.assign(cors, {
@@ -104,24 +109,84 @@ export function createHandler({ env, rules, fetcher = fetch }) {
       if (!quota.allowed) return reply(429, { error: quota.reason || 'quota_exhausted', quota });
 
       // Consumption is committed BEFORE the paid call. Network failures still cost one slot.
+      const upstreamAbort = new AbortController();
+      // The hosted free plan stops a worker after 150s wall clock; finish the stream before that.
+      const deadline = setTimeout(() => upstreamAbort.abort('deadline'), Math.max(1, deadlineMs - (Date.now() - started)));
+      request.signal?.addEventListener('abort', () => upstreamAbort.abort('client'), { once: true });
+      let upstream;
       try {
-        const upstream = await fetcher(UPSTREAM, {
-          method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${upstreamKey}` },
-          body: JSON.stringify({ model: MODEL, messages: [{ role: 'system', content: rules + '\n网页免费版每用户每天仅五次发送。请将必要追问集中在一轮内（不要为凑次数省略依据），信息足够则及时给结论与可核对卦象；不要保证五轮内一定能断清。' }, ...messages], max_tokens: maxOutputTokens, stream: false }),
-          // Leave headroom for auth/RPC and the hosted free plan's 150s idle limit.
-          redirect: 'error', signal: AbortSignal.timeout(115000),
+        upstream = await fetcher(UPSTREAM, {
+          method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream', Authorization: `Bearer ${upstreamKey}` },
+          body: JSON.stringify({ model: MODEL, messages: [{ role: 'system', content: rules + '\n网页免费版每用户每天仅五次发送。请将必要追问集中在一轮内（不要为凑次数省略依据），信息足够则及时给结论与可核对卦象；不要保证五轮内一定能断清。' }, ...messages], max_tokens: maxOutputTokens, stream: true }),
+          redirect: 'error', signal: upstreamAbort.signal,
         });
-        if (!upstream.ok) {
-          await upstream.body?.cancel();
-          return reply(502, { error: 'upstream_failed', quota });
-        }
-        const data = JSON.parse(await readLimited(upstream, 2 * 1024 * 1024));
-        const content = data.choices?.[0]?.message?.content;
-        if (typeof content !== 'string' || !content.trim() || content.length > MAX_REPLY_CHARS) return reply(502, { error: 'invalid_upstream_reply', quota });
-        // Do not return raw upstream JSON/errors; they may reflect credentials.
-        if (content.includes(upstreamKey) || content.includes(serviceKey)) return reply(502, { error: 'invalid_upstream_reply', quota });
-        return reply(200, { content, truncated: data.choices?.[0]?.finish_reason === 'length', max_output_tokens: maxOutputTokens, quota });
-      } catch { return reply(502, { error: 'upstream_unavailable', quota }); }
+      } catch { clearTimeout(deadline); return reply(502, { error: 'upstream_unavailable', quota }); }
+      if (!upstream.ok) {
+        clearTimeout(deadline);
+        await upstream.body?.cancel();
+        return reply(502, { error: 'upstream_failed', quota });
+      }
+      return new Response(relay(upstream, { quota, maxOutputTokens, secrets: [upstreamKey, serviceKey], upstreamAbort, deadline }), {
+        status: 200, headers: { ...cors, 'Content-Type': 'text/event-stream; charset=utf-8', 'X-Accel-Buffering': 'no' },
+      });
     } catch { return reply(503, { error: 'service_unavailable' }); }
   };
+}
+
+// Re-emits only visible text as our own SSE events; raw upstream JSON never reaches the browser.
+function relay(upstream, { quota, maxOutputTokens, secrets, upstreamAbort, deadline }) {
+  const encoder = new TextEncoder();
+  // Hold back enough characters that no prefix of a secret is ever flushed before the full check.
+  const holdBack = Math.max(...secrets.map(s => s.length)) - 1;
+  let iterator;
+  return new ReadableStream({
+    async start(stream) {
+      const send = event => stream.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
+      send({ type: 'start', quota, max_output_tokens: maxOutputTokens });
+      let content = '', flushed = 0, checked = 0, finish = null, lastPing = 0, lastFlush = 0, failed = null;
+      const flush = final => {
+        // A new occurrence must end in the unchecked tail, so scan only that window (keeps CPU linear).
+        const window = content.slice(Math.max(0, checked - holdBack));
+        checked = content.length;
+        if (secrets.some(secret => window.includes(secret))) throw new Error('reflected_secret');
+        const end = final ? content.length : Math.max(flushed, content.length - holdBack);
+        if (end > flushed) { send({ type: 'delta', text: content.slice(flushed, end) }); flushed = end; }
+      };
+      try {
+        iterator = completionChunks(upstream, 8 * 1024 * 1024);
+        for await (const chunk of iterator) {
+          const part = streamDelta(chunk);
+          finish = part.finish || finish;
+          if (part.text) {
+            content += part.text;
+            if (content.length > MAX_REPLY_CHARS) { content = content.slice(0, MAX_REPLY_CHARS); finish = 'length'; break; }
+            // Coalesce token-sized chunks: fewer writes keeps Edge CPU time well under its 2s limit.
+            if (Date.now() - lastFlush >= 50) { lastFlush = Date.now(); flush(false); }
+          } else if (part.reasoning && Date.now() - lastPing > 1500) {
+            lastPing = Date.now();
+            send({ type: 'thinking' });
+          }
+        }
+      } catch (error) {
+        failed = error?.message === 'reflected_secret' ? 'invalid_upstream_reply'
+          : upstreamAbort.signal.reason === 'deadline' ? 'time_limit' : 'upstream_unavailable';
+      } finally {
+        clearTimeout(deadline);
+      }
+      try {
+        if (failed === 'invalid_upstream_reply') send({ type: 'error', error: failed });
+        else if (!content.trim()) send({ type: 'error', error: failed === 'time_limit' ? 'time_limit' : failed || 'invalid_upstream_reply' });
+        else {
+          flush(true);
+          send({ type: 'done', truncated: finish === 'length' || failed === 'time_limit', interrupted: failed === 'upstream_unavailable', reason: failed || finish });
+        }
+      } catch { send({ type: 'error', error: 'invalid_upstream_reply' }); }
+      stream.close();
+    },
+    cancel() {
+      clearTimeout(deadline);
+      upstreamAbort.abort('client');
+      void iterator?.return?.();
+    },
+  });
 }

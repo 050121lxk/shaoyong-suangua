@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { createHandler, UPSTREAM, MODEL, validateMessages, readLimited } from '../supabase/functions/_shared/handler.mjs';
+import { sseData, streamDelta } from '../supabase/functions/_shared/sse.mjs';
 
 const origin = 'https://test.example';
 const settings = { ALLOWED_ORIGINS: origin, SUPABASE_URL: 'https://project.example',
@@ -12,7 +13,7 @@ const req = (body = { action: 'chat', messages: [{ role: 'user', content: '问�
   method: 'POST', headers: { Origin: origin, Authorization: 'Bearer valid-test-token', 'Content-Type': 'application/json', ...extra }, body: JSON.stringify(body),
 });
 function fixture({ used = 0, global = 0, upstreamStatus = 200, confirmed = true, failQuota = false,
-  content = '模型正文', finishReason = 'stop', outputLimit } = {}) {
+  content = '模型正文', finishReason = 'stop', outputLimit, plainJson = false, upstreamChunks, deadlineMs } = {}) {
   const calls = [];
   const state = { used, global };
   const handler = createHandler({ env: k => k === 'FREE_MAX_OUTPUT_TOKENS' ? outputLimit : settings[k], rules: 'SERVER FULL RULES', fetcher: async (url, init) => {
@@ -29,10 +30,36 @@ function fixture({ used = 0, global = 0, upstreamStatus = 200, confirmed = true,
     }
     assert.equal(url, UPSTREAM);
     if (upstreamStatus !== 200) return json({ secret: settings.UPSTREAM_API_KEY }, upstreamStatus);
-    return json({ choices: [{ message: { content }, finish_reason: finishReason }] });
-  } });
+    if (plainJson) return new Response(JSON.stringify({ choices: [{ message: { content }, finish_reason: finishReason }] }), { headers: { 'content-type': 'application/json' } });
+    return sse(upstreamChunks || [...chunk(content, 7).map(t => ({ choices: [{ delta: { content: t } }] })),
+      { choices: [{ delta: {}, finish_reason: finishReason }] }], init.signal);
+  }, ...(deadlineMs ? { deadlineMs } : {}) });
   return { handler, state, calls };
 }
+function chunk(text, size) {
+  const parts = [];
+  for (let i = 0; i < text.length; i += size) parts.push(text.slice(i, i + size));
+  return parts;
+}
+// Upstream SSE with CRLF lines, split across arbitrary network chunk boundaries. `hang` simulates a stalled provider.
+function sse(chunks, signal) {
+  const encoded = new TextEncoder().encode(chunks.map(c => c === 'hang' ? '' : `data: ${JSON.stringify(c)}\r\n\r\n`).join('') + (chunks.includes('hang') ? '' : 'data: [DONE]\r\n\r\n'));
+  return new Response(new ReadableStream({
+    async start(controller) {
+      const step = encoded.length > 20000 ? 4093 : 13;
+      for (let i = 0; i < encoded.length; i += step) controller.enqueue(encoded.slice(i, i + step));
+      if (!chunks.includes('hang')) return controller.close();
+      signal.addEventListener('abort', () => controller.error(new Error('aborted')), { once: true });
+    },
+  }), { headers: { 'content-type': 'text/event-stream' } });
+}
+async function events(response) {
+  assert.match(response.headers.get('content-type'), /^text\/event-stream/);
+  const list = [];
+  for await (const data of sseData(response.body)) list.push(JSON.parse(data));
+  return list;
+}
+const textOf = list => list.filter(e => e.type === 'delta').map(e => e.text).join('');
 
 test('no login or invalid origin cannot consume or reach upstream', async () => {
   const { handler, calls } = fixture();
@@ -49,7 +76,7 @@ test('server id, fixed model, fixed URL, full rules and output cap override call
   const paid = calls.at(-1);
   assert.equal(paid.url, UPSTREAM);
   const body = JSON.parse(paid.init.body);
-  assert.equal(body.model, MODEL); assert.equal(body.max_tokens, 32768);
+  assert.equal(body.model, MODEL); assert.equal(body.max_tokens, 32768); assert.equal(body.stream, true);
   assert.ok(body.messages[0].content.startsWith('SERVER FULL RULES'));
   assert.equal(paid.init.redirect, 'error');
   const text = await response.text();
@@ -62,9 +89,10 @@ test('long free replies are returned intact and can be included in a follow-up',
   const f = fixture({ content });
   const response = await f.handler(req());
   assert.equal(response.status, 200);
-  const body = await response.json();
-  assert.equal(body.content, content);
-  assert.equal(body.truncated, false);
+  const list = await events(response);
+  assert.equal(list[0].type, 'start'); assert.equal(list[0].quota.used, 1);
+  assert.equal(textOf(list), content);
+  assert.deepEqual(list.at(-1), { type: 'done', truncated: false, interrupted: false, reason: 'stop' });
   const messages = [{ role: 'user', content: '问题' }, { role: 'assistant', content }, { role: 'user', content: '继续' }];
   assert.deepEqual(validateMessages(messages), messages);
   assert.equal((await f.handler(req({ action: 'chat', messages }))).status, 200);
@@ -79,26 +107,96 @@ test('only server configuration can adjust output budget; invalid settings use s
 });
 test('provider length finish is reported without slicing content or automatic paid retries', async () => {
   const f = fixture({ content: '尚未结束的正文', finishReason: 'length' });
-  const body = await (await f.handler(req())).json();
-  assert.equal(body.content, '尚未结束的正文');
-  assert.equal(body.truncated, true);
-  assert.equal(body.max_output_tokens, 32768);
+  const list = await events(await f.handler(req()));
+  assert.equal(textOf(list), '尚未结束的正文');
+  assert.equal(list.at(-1).truncated, true);
+  assert.equal(list[0].max_output_tokens, 32768);
   assert.equal(f.calls.filter(c => c.url === UPSTREAM).length, 1);
 });
-test('larger output budget retains response resource limits and secret-reflection protection', async () => {
-  for (const content of ['字'.repeat(300001), settings.UPSTREAM_API_KEY, settings.SUPABASE_SERVICE_ROLE_KEY]) {
-    const f = fixture({ content });
-    const response = await f.handler(req());
-    assert.equal(response.status, 502);
-    const body = await response.json();
-    assert.equal(body.error, 'invalid_upstream_reply');
-    assert.equal(body.content, undefined);
+test('secret reflections are never streamed, not even as a prefix split across chunks', async () => {
+  for (const secret of [settings.UPSTREAM_API_KEY, settings.SUPABASE_SERVICE_ROLE_KEY]) {
+    const f = fixture({ content: '前文'.repeat(30) + secret + '后文' });
+    const list = await events(await f.handler(req()));
+    const streamed = textOf(list);
+    for (let n = 4; n <= secret.length; n++) assert.ok(!streamed.includes(secret.slice(0, n)), `prefix ${n} leaked`);
+    assert.deepEqual(list.at(-1), { type: 'error', error: 'invalid_upstream_reply' });
     assert.equal(f.state.used, 1);
   }
 });
+test('oversized replies stop at the resource limit and are flagged truncated', async () => {
+  const f = fixture({ content: '字'.repeat(300050) });
+  const list = await events(await f.handler(req()));
+  assert.equal(textOf(list).length, 300000);
+  assert.equal(list.at(-1).truncated, true);
+});
+test('reasoning-only chunks become throttled keepalives, never visible text', async () => {
+  const f = fixture({ upstreamChunks: [{ choices: [{ delta: { reasoning_content: '内部思考' } }] }, { choices: [{ delta: { reasoning_content: '更多' } }] },
+    { choices: [{ delta: { content: '答案' } }] }, { choices: [{ delta: {}, finish_reason: 'stop' }] }] });
+  const list = await events(await f.handler(req()));
+  assert.deepEqual(list.filter(e => e.type === 'thinking').length, 1);
+  assert.equal(textOf(list), '答案');
+  assert.ok(!JSON.stringify(list).includes('内部思考'));
+});
+test('providers that ignore stream:true and return plain JSON still work', async () => {
+  const list = await events(await fixture({ plainJson: true, content: '整段正文' }).handler(req()));
+  assert.equal(textOf(list), '整段正文');
+  assert.equal(list.at(-1).type, 'done');
+});
+test('stalled upstream is cut at the deadline; partial text is kept and flagged, empty text is an error', async () => {
+  const partial = fixture({ deadlineMs: 50, upstreamChunks: [{ choices: [{ delta: { content: '已输出部分' } }] }, 'hang'] });
+  const list = await events(await partial.handler(req()));
+  assert.equal(textOf(list), '已输出部分');
+  assert.deepEqual(list.at(-1), { type: 'done', truncated: true, interrupted: false, reason: 'time_limit' });
+  const empty = fixture({ deadlineMs: 50, upstreamChunks: ['hang'] });
+  assert.deepEqual((await events(await empty.handler(req()))).at(-1), { type: 'error', error: 'time_limit' });
+});
+test('text is relayed while the upstream is still generating', async () => {
+  const encoder = new TextEncoder();
+  const settingsEnv = k => settings[k];
+  const first = '第一段推演内容'.repeat(10);
+  let release;
+  const gate = new Promise(resolve => { release = resolve; });
+  const handler = createHandler({ env: settingsEnv, rules: 'r', fetcher: async url => {
+    if (url.endsWith('/auth/v1/user')) return json({ id: 'u', email_confirmed_at: 'x', app_metadata: { providers: ['github'] } });
+    if (url.endsWith('/rpc/free_quota')) return json({ allowed: true, used: 1, limit: 5, global_available: true, global_remaining: 99 });
+    return new Response(new ReadableStream({ async start(c) {
+      c.enqueue(encoder.encode(`data: ${JSON.stringify({ choices: [{ delta: { content: first } }] })}\n\n`));
+      await gate;
+      c.enqueue(encoder.encode(`data: ${JSON.stringify({ choices: [{ delta: { content: '第二段' }, finish_reason: 'stop' }] })}\n\ndata: [DONE]\n\n`));
+      c.close();
+    } }), { headers: { 'content-type': 'text/event-stream' } });
+  } });
+  const iterator = sseData((await handler(req())).body)[Symbol.asyncIterator]();
+  assert.equal(JSON.parse((await iterator.next()).value).type, 'start');
+  // Upstream is blocked here, yet the first text (minus the secret-check hold-back) already reached the client.
+  const early = JSON.parse((await iterator.next()).value);
+  assert.equal(early.type, 'delta');
+  assert.ok(early.text.length > 0 && first.startsWith(early.text));
+  release();
+  const rest = [early];
+  for (let r; !(r = await iterator.next()).done;) rest.push(JSON.parse(r.value));
+  assert.equal(textOf(rest), first + '第二段');
+  assert.equal(rest.at(-1).type, 'done');
+});
+test('client disconnect aborts the upstream request', async () => {
+  const f = fixture({ upstreamChunks: [{ choices: [{ delta: { content: '开头' } }] }, 'hang'] });
+  const response = await f.handler(req());
+  const reader = response.body.getReader();
+  await reader.read();
+  await reader.cancel();
+  assert.equal(f.calls.at(-1).init.signal.aborted, true);
+});
+test('SSE parser handles CRLF, split chunks, multi-line data and array content', async () => {
+  const bytes = new TextEncoder().encode('event: x\r\ndata: a\r\ndata: b\r\n\r\n: comment\n\ndata:c\n\n');
+  const body = new ReadableStream({ start(c) { for (const b of bytes) c.enqueue(new Uint8Array([b])); c.close(); } });
+  const out = [];
+  for await (const d of sseData(body)) out.push(d);
+  assert.deepEqual(out, ['a\nb', 'c']);
+  assert.equal(streamDelta({ choices: [{ delta: { content: [{ type: 'text', text: '甲' }, { type: 'image', x: 1 }] } }] }).text, '甲');
+});
 test('sixth request blocked; separate global daily cap blocks paid call', async () => {
   const f = fixture({ used: 4 });
-  assert.equal((await f.handler(req())).status, 200);
+  await events(await f.handler(req()));
   assert.equal((await f.handler(req())).status, 429);
   assert.equal(f.calls.filter(c => c.url === UPSTREAM).length, 1);
   const g = fixture({ global: 100 });

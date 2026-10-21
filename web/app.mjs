@@ -1,9 +1,12 @@
 import { TRIGRAMS, beijingNow, timeInfo, timeHexagram, buildHexagram, hexagram,
-  calendarText, boardText, normalizeEndpoint, assembleRules, extractReply } from './core.mjs';
+  calendarText, boardText, normalizeEndpoint, assembleRules } from './core.mjs';
+import { completionChunks, streamDelta } from '../supabase/functions/_shared/sse.mjs';
 import { freeService, initAuth } from './auth.mjs';
 
 const $ = id => document.getElementById(id);
 const files = ['SKILL.md', 'REFERENCE.md', 'EXAMPLES.md', 'YAO_CI.md'];
+// No chunk for this long → treat the connection as stalled.
+const IDLE_TIMEOUT_MS = 120000;
 let rules = '', history = [], lockedContext = null, busy = false, attachment = null;
 let imageVersion = 0, imageLoading = false, controller = null, approvedDestination = '';
 const dialog = $('consent-dialog');
@@ -43,7 +46,6 @@ function updateControls() {
   $('reset').disabled = busy;
   $('stop').hidden = !busy;
   $('messages').setAttribute('aria-busy', String(busy));
-  document.querySelectorAll('[data-example]').forEach(b => { b.disabled = busy || !!lockedContext; });
 }
 window.addEventListener('free-auth-change', updateControls);
 $('service-mode').addEventListener('change', () => { approvedDestination = ''; updateControls(); });
@@ -51,7 +53,7 @@ $('service-mode').addEventListener('change', () => { approvedDestination = ''; u
 async function loadRules() {
   rules = '';
   $('retry-rules').hidden = true;
-  $('rule-status').textContent = '正在加载仓库规则…';
+  $('rule-status').textContent = '正在加载规则…';
   $('rule-dot').className = 'status-dot';
   updateControls();
   try {
@@ -63,10 +65,10 @@ async function loadRules() {
       return [name, text];
     }));
     rules = assembleRules(docs);
-    $('rule-status').textContent = `完整规则已就绪 · 4 份文档 · 约 ${(rules.length / 10000).toFixed(1)} 万字符（非 token 数）`;
+    $('rule-status').textContent = `规则已就绪 · 约 ${(rules.length / 10000).toFixed(1)} 万字符`;
     $('rule-dot').className = 'status-dot ready';
   } catch {
-    $('rule-status').textContent = '规则加载失败，暂不可发送。请检查网络后重试。';
+    $('rule-status').textContent = '规则加载失败，暂不可发送。';
     $('rule-dot').className = 'status-dot error';
     $('retry-rules').hidden = false;
   }
@@ -115,14 +117,14 @@ function renderBoard() {
     const ctx = lockedContext || getContext();
     const title = document.createElement('p');
     title.className = 'board-title';
-    title.textContent = `${modeLabels[ctx.mode]} · ${lockedContext ? '本局已固定' : '本地预览'}`;
+    title.textContent = `${modeLabels[ctx.mode]} · ${lockedContext ? '本局已固定' : '预览'}`;
     target.append(title);
     if (ctx.board) {
       const b = ctx.board;
       const triples = document.createElement('div');
       triples.className = 'board-triples';
       triples.append(drawHex(b.up, b.down, `主 · ${b.moving}爻动`, b.moving),
-        drawHex(b.huUp, b.huDown, '互 · 过程'), drawHex(b.bUp, b.bDown, '变 · 结果'));
+        drawHex(b.huUp, b.huDown, '互'), drawHex(b.bUp, b.bDown, '变'));
       const meta = document.createElement('p');
       meta.className = 'board-meta';
       meta.textContent = `体${TRIGRAMS[b.ti][0]} · 用${TRIGRAMS[b.yong][0]} / ${ctx.info.yearGz} ${ctx.info.monthGz} ${ctx.info.dayGz} ${ctx.info.hourGz}`;
@@ -130,7 +132,7 @@ function renderBoard() {
     } else {
       const text = document.createElement('div');
       text.className = 'calendar-only';
-      text.textContent = calendarText(ctx.info) + '\n仅提供历法，不擅起时间卦。请在右侧描述字形或征兆。';
+      text.textContent = calendarText(ctx.info) + '\n此方式不自动起卦，请在提问中描述字形或征兆。';
       target.append(text);
     }
   } catch (error) {
@@ -148,17 +150,63 @@ function contextText(ctx) {
         '本页没有自动起时间卦；请按用户给的字、征兆或已有信息依技能取卦，缺信息先问。');
 }
 
-function addMessage(role, text, image) {
+const nearBottom = () => {
+  const box = $('messages');
+  return box.scrollHeight - box.scrollTop - box.clientHeight < 80;
+};
+const scrollToEnd = () => { $('messages').scrollTop = $('messages').scrollHeight; };
+
+async function copyText(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    // Fallback for browsers/contexts without the async Clipboard API.
+    const area = document.createElement('textarea');
+    area.value = text;
+    area.setAttribute('readonly', '');
+    area.style.position = 'fixed';
+    area.style.opacity = '0';
+    document.body.append(area);
+    area.select();
+    let ok = false;
+    try { ok = document.execCommand('copy'); } catch { ok = false; }
+    area.remove();
+    return ok;
+  }
+}
+
+const LABELS = { user: '你', assistant: '观象', error: '未完成' };
+
+function addMessage(role, text = '', image) {
   $('welcome').hidden = true;
   const article = document.createElement('article');
   article.className = `message ${role}`;
   const label = document.createElement('div');
   label.className = 'message-label';
-  label.textContent = role === 'user' ? '你 · 求问' : role === 'error' ? '未完成 · 本次未加入模型历史' : '观象 · 模型推演';
+  const name = document.createElement('span');
+  name.textContent = LABELS[role];
+  label.append(name);
   const content = document.createElement('div');
   content.className = 'message-content';
   // Never interpret user/model text as HTML, links, or Markdown.
   content.textContent = text;
+  let copy;
+  if (role === 'assistant') {
+    copy = document.createElement('button');
+    copy.type = 'button';
+    copy.className = 'text-button copy-button';
+    copy.textContent = '复制';
+    copy.setAttribute('aria-label', '复制这条回答');
+    copy.addEventListener('click', async () => {
+      const value = content.textContent;
+      if (!value) return;
+      const ok = await copyText(value);
+      copy.textContent = ok ? '已复制' : '复制失败';
+      setTimeout(() => { copy.textContent = '复制'; }, 1500);
+    });
+    label.append(copy);
+  }
   article.append(label, content);
   if (image) {
     const img = document.createElement('img');
@@ -166,7 +214,43 @@ function addMessage(role, text, image) {
     article.append(img);
   }
   $('messages').append(article);
-  $('messages').scrollTop = $('messages').scrollHeight;
+  scrollToEnd();
+  return { article, content, name, copy };
+}
+
+// Incremental renderer for one assistant reply; repaints at most once per frame.
+function replyView() {
+  const view = addMessage('assistant');
+  view.article.classList.add('streaming', 'waiting');
+  view.content.textContent = '正在连接…';
+  view.copy.hidden = true;
+  let text = '', frame = 0;
+  const paint = () => {
+    frame = 0;
+    const follow = nearBottom();
+    view.content.textContent = text;
+    if (follow) scrollToEnd();
+  };
+  return {
+    get text() { return text; },
+    waiting(note) { if (!text) view.content.textContent = note; },
+    append(piece) {
+      if (!piece) return;
+      if (!text) { view.article.classList.remove('waiting'); view.copy.hidden = false; }
+      text += piece;
+      if (!frame) frame = requestAnimationFrame(paint);
+    },
+    finish(note) {
+      if (frame) cancelAnimationFrame(frame);
+      paint();
+      view.article.classList.remove('streaming', 'waiting');
+      if (note) view.name.textContent = `观象 · ${note}`;
+    },
+    remove() {
+      if (frame) cancelAnimationFrame(frame);
+      view.article.remove();
+    },
+  };
 }
 
 function confirmDestination(endpoint, model) {
@@ -194,11 +278,59 @@ $('consent-confirm').addEventListener('click', () => dialog.close('confirm'));
 $('forget-key').addEventListener('click', () => { $('api-key').value = ''; approvedDestination = ''; status('API Key 已从本页清除。'); });
 
 const HTTP_ERRORS = {
-  400: '请求格式、上下文长度或输出参数不被支持。请检查模型和接口配置，必要时新开一局。',
+  400: '请求格式、上下文长度或参数不被支持（部分接口不支持流式输出）。请检查模型和接口配置，必要时新开一局。',
   401: '认证失败，请检查 API Key。', 403: '接口拒绝访问，请检查密钥和模型权限。',
   404: '未找到接口或模型，请检查 Base URL 和模型 ID。',
   413: '请求过大，请减少附图或新开一局。', 429: '额度或速率受限，请检查余额与配额，稍后手动重试。',
 };
+
+// Free service: server events start → thinking / delta… → done (auth.mjs throws on error events).
+async function streamFree(messages, view, signal, onActivity) {
+  const stream = await freeService.request('chat', messages, signal);
+  if (typeof stream?.[Symbol.asyncIterator] !== 'function') throw new Error('免费服务返回格式异常。');
+  let result = { truncated: false, interrupted: false, budget: null };
+  for await (const event of stream) {
+    onActivity();
+    if (event.type === 'start') { result.budget = event.max_output_tokens; view.waiting('模型正在推演…'); }
+    else if (event.type === 'thinking') view.waiting('模型正在思考…');
+    else if (event.type === 'delta' && typeof event.text === 'string') view.append(event.text);
+    else if (event.type === 'done') result = { ...result, truncated: !!event.truncated, interrupted: !!event.interrupted };
+  }
+  return result;
+}
+
+// Bring-your-own-key: OpenAI-compatible SSE, or a plain JSON reply if the provider ignores stream.
+async function streamByok(endpoint, apiKey, model, messages, view, signal, onActivity) {
+  const response = await fetch(endpoint, {
+    method: 'POST', credentials: 'omit', redirect: 'error', referrerPolicy: 'no-referrer',
+    headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream, application/json', Authorization: `Bearer ${apiKey}` },
+    signal,
+    body: JSON.stringify({ model, messages: [{ role: 'system', content: rules }, ...messages],
+      max_tokens: Number($('max-tokens').value), stream: true }),
+  });
+  if (!response.ok) {
+    // Do not display provider bodies: they can contain reflected secrets or untrusted HTML.
+    await response.body?.cancel();
+    throw new Error(`HTTP ${response.status}：${HTTP_ERRORS[response.status] || '服务商返回错误，请检查服务状态或接口兼容性。'}`);
+  }
+  view.waiting('模型正在推演…');
+  let finish = null;
+  try {
+    for await (const chunk of completionChunks(response, 16 * 1024 * 1024)) {
+      onActivity();
+      if (chunk?.error) throw new Error('服务商在输出中途报错，请稍后重试。');
+      const delta = streamDelta(chunk);
+      if (delta.reasoning) view.waiting('模型正在思考…');
+      view.append(delta.text);
+      if (delta.finish) finish = delta.finish;
+    }
+  } catch (error) {
+    if (error instanceof SyntaxError) throw new Error('接口未返回有效数据，请确认这是 Chat Completions 接口。');
+    if (error.message === 'too_large') throw new Error('接口回复过大，已停止接收。');
+    throw error;
+  }
+  return { truncated: finish === 'length', interrupted: false, budget: null };
+}
 
 $('chat-form').addEventListener('submit', async event => {
   event.preventDefault();
@@ -206,10 +338,11 @@ $('chat-form').addEventListener('submit', async event => {
   const question = $('question').value.trim();
   if (!question) return;
   let endpoint, ctx;
+  const free = isFree();
   const apiKey = $('api-key').value.trim();
   const model = $('model').value.trim();
   try {
-    if (isFree()) {
+    if (free) {
       if (!freeService.allowed) throw new Error('请先登录并确认今日仍有免费次数。');
       endpoint = freeService.endpoint;
     } else {
@@ -218,78 +351,83 @@ $('chat-form').addEventListener('submit', async event => {
       if (!model || /[\r\n]/.test(model)) throw new Error('请填写有效的模型 ID。');
     }
     if (history.length >= 40) throw new Error('本局已达 20 轮，请新开一局以控制上下文和费用。');
-    if (isFree() && history.length >= 10) throw new Error('免费模式每局最多 5 轮，请开始新一局。每日次数仍由服务器统一计算。');
+    if (free && history.length >= 10) throw new Error('免费模式每局最多 5 轮，请开始新一局。');
     ctx = lockedContext || getContext();
   } catch (error) { status(error.message, true); return; }
 
   busy = true;
   controller = new AbortController();
   updateControls();
-  let timer;
+  let idleTimer, timedOut = false, view;
+  const onActivity = () => {
+    clearTimeout(idleTimer);
+    idleTimer = setTimeout(() => { timedOut = true; controller?.abort(); }, IDLE_TIMEOUT_MS);
+  };
   try {
-    if (!await confirmDestination(endpoint, isFree() ? freeService.model : model)) { status('已取消，未发出 API 请求。'); return; }
-    if (controller.signal.aborted) { status('已停止，未发出 API 请求。'); return; }
+    if (!await confirmDestination(endpoint, free ? freeService.model : model)) { status('已取消，未发出请求。'); return; }
+    if (controller.signal.aborted) { status('已停止，未发出请求。'); return; }
     const image = attachment?.dataUrl;
     const text = history.length ? question : contextText(ctx) + '\n\n用户求问：\n' + question;
     const userMessage = { role: 'user', content: image ? [
       { type: 'text', text }, { type: 'image_url', image_url: { url: image } },
     ] : text };
-    addMessage('user', question, image);
-    status('模型正在推演… 本页等待完整回复，最长 180 秒。');
-    let timedOut = false;
-    timer = setTimeout(() => { timedOut = true; controller?.abort(); }, 180000);
+    const userView = addMessage('user', question, image);
+    view = replyView();
+    status('');
+    onActivity();
+    let result, failure = null;
     try {
-      if (isFree()) {
-        const data = await freeService.request('chat', [...history, userMessage], controller.signal);
-        if (typeof data.content !== 'string' || !data.content.trim()) throw new Error('免费服务返回正文为空。');
-        history.push(userMessage, { role: 'assistant', content: data.content });
-        lockedContext = ctx;
-        addMessage('assistant', data.content);
-        $('question').value = '';
-        clearImage(); renderBoard();
-        status(data.truncated ? `上游报告输出长度已达限制（本站请求预算 ${data.max_output_tokens || '以服务端配置为准'} token，推理内容也可能占用）；可在剩余次数内请模型继续。` : '本轮完成 · 每日最多 5 次发送，以服务端计数为准。');
-        return;
-      }
-      const response = await fetch(endpoint, {
-        method: 'POST', credentials: 'omit', redirect: 'error', referrerPolicy: 'no-referrer',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
-        signal: controller.signal,
-        body: JSON.stringify({ model, messages: [{ role: 'system', content: rules }, ...history, userMessage],
-          max_tokens: Number($('max-tokens').value), stream: false }),
-      });
-      if (!response.ok) {
-        // Do not display provider bodies: they can contain reflected secrets or untrusted HTML.
-        await response.body?.cancel();
-        throw new Error(`HTTP ${response.status}：${HTTP_ERRORS[response.status] || '服务商返回错误，请检查服务状态或接口兼容性。'}`);
-      }
-      const raw = await response.text();
-      if (raw.length > 4000000) throw new Error('接口回复过大，已停止显示。');
-      let data;
-      try { data = JSON.parse(raw); } catch { throw new Error('接口未返回有效 JSON，请确认这是 Chat Completions 接口。'); }
-      const reply = extractReply(data);
-      history.push(userMessage, { role: 'assistant', content: reply });
-      lockedContext = ctx;
-      addMessage('assistant', reply);
-      $('question').value = '';
-      clearImage();
-      renderBoard();
-      status(data.choices?.[0]?.finish_reason === 'length' ? '回复因输出上限被截断，可提高输出上限并请模型继续。' : '本轮完成 · 追问将保留本局，页面刷新后对话不保留。');
+      result = free
+        ? await streamFree([...history, userMessage], view, controller.signal, onActivity)
+        : await streamByok(endpoint, apiKey, model, [...history, userMessage], view, controller.signal, onActivity);
     } catch (error) {
+      failure = error;
+    }
+    if (!failure && !view.text.trim()) failure = new Error('模型没有返回正文（推理模型可能把输出预算用在了思考上），可提高输出上限后重试。');
+
+    // Keep whatever already streamed (unless the server rejected the reply as a whole),
+    // so the user can copy it or ask the model to continue.
+    const partial = !failure?.discard && view.text.trim() ? view.text : '';
+    if (failure && !partial) {
+      view.remove();
       let message;
-      if (controller.signal.aborted) message = timedOut ? '等待超时（180 秒），本次未加入对话历史。服务商可能仍在处理或计费。' : '已停止等待，本次未加入对话历史。服务商可能仍在处理或计费。';
-      else if (error instanceof TypeError) message = '无法连接接口：可能是 CORS 跨域限制、网络或 TLS 问题。请使用允许浏览器直连的可信接口；不要关闭浏览器安全机制。';
-      else message = error.message;
+      if (controller.signal.aborted) message = timedOut ? `连续 ${IDLE_TIMEOUT_MS / 1000} 秒没有收到数据，已停止等待。` : '已停止，模型尚未输出正文。';
+      else if (failure instanceof TypeError) message = '无法连接接口：可能是跨域（CORS）、网络或 TLS 问题。请使用允许浏览器直连的可信接口。';
+      else message = failure.message;
       // Never print raw request objects, keys, or response bodies.
-      message = apiKey ? message.split(apiKey).join('[密钥已隐藏]') : message;
-      addMessage('error', message);
-      status('发送未完成，输入及附图仍保留，可检查配置后手动重试。', true);
+      if (apiKey) message = message.split(apiKey).join('[密钥已隐藏]');
+      if (failure.discard) userView.article.remove();
+      addMessage('error', message + (!free && controller.signal.aborted ? ' 服务商可能仍在处理或计费。' : ''));
+      status('本次未加入对话，输入和附图已保留，可检查后手动重试。', true);
+      return;
+    }
+
+    history.push(userMessage, { role: 'assistant', content: view.text });
+    lockedContext = ctx;
+    $('question').value = '';
+    clearImage();
+    renderBoard();
+    if (failure) {
+      view.finish(controller.signal.aborted && !timedOut ? '已停止' : '已中断');
+      status('回答未完整，已保留输出部分并计入本局；可发送「继续」让模型接着写。', true);
+    } else if (result.interrupted) {
+      view.finish('已中断');
+      status('上游连接中断，已保留输出部分；可发送「继续」让模型接着写。', true);
+    } else if (result.truncated) {
+      view.finish('已截断');
+      status(free
+        ? `已达输出上限（本站预算 ${result.budget || '以服务端为准'} token，推理也会占用）或 140 秒时限；可发送「继续」。`
+        : '已达输出上限，可提高最大输出 token 后发送「继续」。', true);
+    } else {
+      view.finish();
+      status('');
     }
   } finally {
-    clearTimeout(timer);
+    clearTimeout(idleTimer);
     controller = null;
     busy = false;
     // If the browser stopped waiting, the server may already have consumed a slot.
-    if (isFree() && freeService.authenticated) void freeService.refreshQuota();
+    if (free && freeService.authenticated) void freeService.refreshQuota();
     updateControls();
   }
 });
@@ -341,9 +479,8 @@ $('image-file').addEventListener('change', async () => {
     context.drawImage(image, 0, 0, canvas.width, canvas.height);
     attachment = { dataUrl: canvas.toDataURL('image/jpeg', 0.88) };
     $('attachment-preview').src = attachment.dataUrl;
-    $('attachment-name').textContent = `${canvas.width} × ${canvas.height} · 本地重编码（仅本次附图）`;
+    $('attachment-name').textContent = `${canvas.width} × ${canvas.height} · 需视觉模型`;
     $('attachment').hidden = false;
-    status('图片已在本地缩放；发送时会交给所选模型服务商，请确认模型支持视觉。');
   } catch (error) {
     if (version === imageVersion) { clearImage(); status(error.message || '无法读取图片，请更换文件。', true); }
   } finally {
@@ -363,29 +500,12 @@ function reset() {
   $('welcome').hidden = false;
   $('question').value = '';
   $('casting-time').value = beijingNow();
-  status('已开始新一局。API Key 仍仅在本页，离开前可点击「清除密钥」。');
+  status('已开始新一局。');
   renderBoard();
   updateControls();
   return true;
 }
 $('reset').addEventListener('click', reset);
-document.querySelectorAll('[data-example]').forEach(button => button.addEventListener('click', () => {
-  if (busy || lockedContext) return;
-  const example = button.dataset.example;
-  if (example === 'job') {
-    $('casting-mode').value = 'time';
-    $('question').value = '请按时间卦看看我这次求职的进展。信息不足时，请先问我，再展开分析。';
-  } else if (example === 'character') {
-    $('casting-mode').value = 'character';
-    $('question').value = '我想以「安」字测最近一件事的进展。请先问清事项，按测字规则分析，不要凭空补造字形异常或外应。';
-  } else {
-    $('casting-mode').value = 'manual';
-    $('upper').value = '7'; $('lower').value = '3'; $('moving').value = '1';
-    $('question').value = '射覆：我心里想了一件物品。卦局为上艮下离、初爻动，请沿用原卦，按阴阳爻结构直接猜，不追问提示。';
-  }
-  renderBoard();
-  $('question').focus();
-}));
 
 // Clear credentials on navigation / bfcache; never persist secrets or chat.
 window.addEventListener('pagehide', () => { $('api-key').value = ''; approvedDestination = ''; controller?.abort(); freeService.clear(); });

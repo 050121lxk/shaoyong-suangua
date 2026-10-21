@@ -73,7 +73,9 @@ npx supabase functions deploy free-chat --no-verify-jwt --use-api
 
 Secrets 设置后通常不用重新部署。若使用 CLI，请通过忽略的 `.env` 文件导入，不要将秘密写进命令行历史、截图或 Git 提交。紧急停用：把 `FREE_SERVICE_ENABLED` 设为 `false`，或撤销上游 Key。
 
-正文按原文返回，不进行字符裁切；上游返回 `finish_reason: length` 时网页提示可能截断及本次请求预算。长回复可原样加入追问历史（助手每条资源保护阈值 30 万字符，用户输入仍限 2.4 万字符；上游响应体最多 2 MiB）。这些是内存安全边界，不是模型 token 上限。后端非流式上游等待仍为 115 秒，因此提高预算并不保证超长推理能在云端时限内完成，也不自动发起付费续写。
+后端以 `stream: true` 请求上游，并把正文改写为自有 SSE 事件转发给网页：`start`（配额、输出预算）→ `thinking`（推理期间保活，不转发推理内容）/ `delta`（正文增量）→ `done`（`truncated` / `interrupted` / `reason`）或 `error`。上游原始 JSON 不转发；为防止密钥被模型复述，每次转发都扣留可能构成密钥前缀的末尾字符，检测到密钥即发 `error` 并要求网页丢弃整段。上游忽略流式、返回整段 JSON 时同样兼容。
+
+正文不裁切；上游 `finish_reason: length` 或到达单次总时限 140 秒（Supabase 免费版墙钟上限 150 秒）时 `done.truncated=true`，网页保留已输出部分并提示发送「继续」，不自动发起付费续写。助手每条回复保护阈值 30 万字符，用户输入仍限 2.4 万字符；这些是内存安全边界，不是模型 token 上限。
 
 ## 5. 构建并发布网页
 

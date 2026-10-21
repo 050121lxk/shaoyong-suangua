@@ -10,7 +10,7 @@ const output = path.join(root, '_site');
 // _site is exclusively generated; do not publish old test fixtures or stale files.
 await rm(output, { recursive: true, force: true });
 await mkdir(output, { recursive: true });
-for (const file of ['index.html', 'style.css']) await cp(path.join(root, 'web', file), path.join(output, file));
+for (const file of ['index.html', 'style.css', 'icon.svg']) await cp(path.join(root, 'web', file), path.join(output, file));
 // Public Supabase browser settings only; service-role/upstream secrets are never read here.
 const browserConfig = {
   SUPABASE_URL: env.SUPABASE_URL || '',
