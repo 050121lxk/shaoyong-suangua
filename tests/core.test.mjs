@@ -84,13 +84,25 @@ test('relations and remainder zero follow skill conventions', () => {
   assert.equal(wangshuai('水', '亥'), '旺'); assert.equal(wangshuai('木', '亥'), '相');
 });
 
-test('web uses text-only output, memory-only auth and only an explicitly configured CAPTCHA script', () => {
+test('web uses text-only output, bounded 24h sign-in storage and only an explicitly configured CAPTCHA script', () => {
   const app = readFileSync(new URL('../web/app.mjs', import.meta.url), 'utf8');
   const auth = readFileSync(new URL('../web/auth.mjs', import.meta.url), 'utf8');
   const html = readFileSync(new URL('../web/index.html', import.meta.url), 'utf8');
   assert.doesNotMatch(app, /\.innerHTML|\.outerHTML|insertAdjacentHTML|localStorage|sessionStorage|indexedDB|document\.cookie/);
-  assert.doesNotMatch(auth, /\.innerHTML|\.outerHTML|insertAdjacentHTML|localStorage|sessionStorage|indexedDB|document\.cookie/);
-  assert.match(auth, /persistSession: false/);
+  assert.doesNotMatch(auth, /\.innerHTML|\.outerHTML|insertAdjacentHTML|sessionStorage|indexedDB|document\.cookie/);
+  // Sign-in persists through a wrapper that enforces the 24h window; nothing else in auth.mjs touches storage.
+  assert.match(auth, /persistSession: true, storage: loginStorage/);
+  assert.match(auth, /LOGIN_TTL_MS = 24 \* 60 \* 60 \* 1000/);
+  assert.deepEqual([...auth.matchAll(/localStorage\.(\w+)\(/g)].map(m => m[1]).sort(),
+    ['getItem', 'getItem', 'getItem', 'removeItem', 'removeItem', 'setItem', 'setItem']);
+  // Saved readings are text only (images replaced by a marker) and the API key never leaves page memory.
+  assert.match(app, /\[附图未保存\]/);
+  assert.doesNotMatch(app, /saveLast\([^)]*api-key/);
+  // The desk pet may only remember that the onboarding guide was seen.
+  const pet = readFileSync(new URL('../web/pet.mjs', import.meta.url), 'utf8');
+  assert.doesNotMatch(pet, /\.innerHTML|\.outerHTML|insertAdjacentHTML|sessionStorage|indexedDB|document\.cookie/);
+  assert.deepEqual([...pet.matchAll(/localStorage\.(\w+)\(([^,)]+)/g)].map(m => m[1] + ' ' + m[2]), ['getItem GUIDE_KEY', 'setItem GUIDE_KEY']);
+  assert.doesNotMatch(html, /deepseek|ccode\.vip/, 'free service model/upstream are not shown to users');
   assert.match(auth, /if \(!config\.TURNSTILE_SITE_KEY\) return/);
   assert.doesNotMatch(html, /<script[^>]+src="https?:/);
   assert.match(app, /redirect: 'error'/);

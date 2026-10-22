@@ -11,6 +11,7 @@ const output = path.join(root, '_site');
 await rm(output, { recursive: true, force: true });
 await mkdir(output, { recursive: true });
 for (const file of ['index.html', 'style.css', 'icon.svg']) await cp(path.join(root, 'web', file), path.join(output, file));
+await cp(path.join(root, 'web/assets'), path.join(output, 'assets'), { recursive: true });
 // Public Supabase browser settings only; service-role/upstream secrets are never read here.
 const browserConfig = {
   SUPABASE_URL: env.SUPABASE_URL || '',

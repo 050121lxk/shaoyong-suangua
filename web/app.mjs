@@ -2,12 +2,14 @@ import { TRIGRAMS, beijingNow, timeInfo, timeHexagram, buildHexagram, hexagram,
   calendarText, boardText, normalizeEndpoint, assembleRules } from './core.mjs';
 import { completionChunks, streamDelta } from '../supabase/functions/_shared/sse.mjs';
 import { freeService, initAuth } from './auth.mjs';
+import { createPet, runGuide, guideSeen } from './pet.mjs';
 
 const $ = id => document.getElementById(id);
 const files = ['SKILL.md', 'REFERENCE.md', 'EXAMPLES.md', 'YAO_CI.md'];
 // No chunk for this long → treat the connection as stalled.
 const IDLE_TIMEOUT_MS = 120000;
-let rules = '', history = [], lockedContext = null, busy = false, attachment = null;
+// `shown` = what the user typed each round (history's first message also carries the board text).
+let rules = '', history = [], shown = [], lockedContext = null, busy = false, attachment = null;
 let imageVersion = 0, imageLoading = false, controller = null, approvedDestination = '';
 const dialog = $('consent-dialog');
 const modeLabels = { time: '时间起卦', manual: '已有卦局', character: '测字', observation: '观物 / 其他' };
@@ -119,6 +121,10 @@ function renderBoard() {
     title.className = 'board-title';
     title.textContent = `${modeLabels[ctx.mode]} · ${lockedContext ? '本局已固定' : '预览'}`;
     target.append(title);
+    $('casting-chip').textContent = ctx.board
+      ? `${hexagram(ctx.board.up, ctx.board.down)} · ${lockedContext ? '已固定' : '预览'}`
+      : `${modeLabels[ctx.mode]} · ${lockedContext ? '已固定' : '预览'}`;
+    $('casting-chip').classList.toggle('locked', !!lockedContext);
     if (ctx.board) {
       const b = ctx.board;
       const triples = document.createElement('div');
@@ -207,12 +213,20 @@ function addMessage(role, text = '', image) {
     });
     label.append(copy);
   }
-  article.append(label, content);
+  const body = document.createElement('div');
+  body.className = 'message-body';
+  body.append(label, content);
   if (image) {
     const img = document.createElement('img');
     img.className = 'message-image'; img.alt = '本次提交的图片'; img.src = image;
-    article.append(img);
+    body.append(img);
   }
+  if (role !== 'user') {
+    const avatar = document.createElement('img');
+    avatar.className = 'avatar'; avatar.src = './assets/avatar.webp'; avatar.alt = ''; avatar.width = 40; avatar.height = 40;
+    article.append(avatar);
+  }
+  article.append(body);
   $('messages').append(article);
   scrollToEnd();
   return { article, content, name, copy };
@@ -258,10 +272,11 @@ function confirmDestination(endpoint, model) {
   if (approvedDestination === key) return Promise.resolve(true);
   $('consent-endpoint').textContent = endpoint;
   $('consent-model').textContent = model;
+  $('consent-details').hidden = isFree();
+  $('consent-warning').hidden = isFree();
   $('consent-description').textContent = isFree()
-    ? '免费服务：登录凭据发给 Supabase 后端；后端使用管理员的服务端密钥，转发问题、规则、对话和附图到 api.ccode.vip。每次转发占用今日 1 次，失败也计次。'
+    ? '免费体验由本站后端代为请求模型，你的问题、对话和附图会交给模型服务商处理。每次发送占用今日 1 次，失败也计次。本页只确认这一次。'
     : '你的 API Key 将直接发给下列接口，问题、完整规则、对话和附图将由该服务商处理。';
-  if (isFree()) $('consent-endpoint').textContent = `${endpoint} → ${freeService.upstream}`;
   return new Promise(resolve => {
     const onClose = () => {
       if (dialog.returnValue === 'confirm') approvedDestination = key;
@@ -364,7 +379,8 @@ $('chat-form').addEventListener('submit', async event => {
     idleTimer = setTimeout(() => { timedOut = true; controller?.abort(); }, IDLE_TIMEOUT_MS);
   };
   try {
-    if (!await confirmDestination(endpoint, free ? freeService.model : model)) { status('已取消，未发出请求。'); return; }
+    if (!await confirmDestination(endpoint, free ? 'free' : model)) { status('已取消，未发出请求。'); return; }
+    pet.activity('casting');
     if (controller.signal.aborted) { status('已停止，未发出请求。'); return; }
     const image = attachment?.dataUrl;
     const text = history.length ? question : contextText(ctx) + '\n\n用户求问：\n' + question;
@@ -399,11 +415,14 @@ $('chat-form').addEventListener('submit', async event => {
       if (failure.discard) userView.article.remove();
       addMessage('error', message + (!free && controller.signal.aborted ? ' 服务商可能仍在处理或计费。' : ''));
       status('本次未加入对话，输入和附图已保留，可检查后手动重试。', true);
+      pet.activity(controller.signal.aborted && !timedOut ? null : 'error', 2500);
       return;
     }
 
     history.push(userMessage, { role: 'assistant', content: view.text });
+    shown.push(question);
     lockedContext = ctx;
+    void saveLast();
     $('question').value = '';
     clearImage();
     renderBoard();
@@ -422,7 +441,9 @@ $('chat-form').addEventListener('submit', async event => {
       view.finish();
       status('');
     }
+    pet.activity(failure || result.interrupted ? null : 'success', 2000);
   } finally {
+    if (pet.state === 'casting') pet.activity(null);
     clearTimeout(idleTimer);
     controller = null;
     busy = false;
@@ -490,10 +511,63 @@ $('image-file').addEventListener('change', async () => {
   }
 });
 
+// ---- Saved "上一局" (signed-in users only; text only, one per user, server-side RLS) ----
+const textOnly = content => typeof content === 'string' ? content
+  : content.filter(p => p.type === 'text').map(p => p.text).join('\n') + '\n[附图未保存]';
+
+async function saveLast() {
+  if (!freeService.authenticated || !lockedContext) return;
+  const ctx = lockedContext;
+  const saved = await freeService.saveLast({
+    mode: isFree() ? 'free' : 'byok',
+    context: { mode: ctx.mode, value: ctx.value, board: ctx.board && { up: ctx.board.up, down: ctx.board.down, moving: ctx.board.moving }, shown },
+    messages: history.map(m => ({ role: m.role, content: textOnly(m.content) })),
+  });
+  if (!saved) status('本局未能保存到账号（可能过长），不影响继续对话。');
+}
+
+let restoring = false;
+async function restoreLast() {
+  if (restoring || busy || history.length) return;
+  restoring = true;
+  try { await applyLast(await freeService.loadLast()); } finally { restoring = false; }
+}
+async function applyLast(record) {
+  if (!record || busy || history.length || !globalThis.Solar) return;
+  try {
+    const c = record.context;
+    const info = timeInfo(c.value, globalThis.Solar);
+    const board = c.mode === 'time' ? timeHexagram(info) : c.mode === 'manual' ? buildHexagram(c.board.up, c.board.down, c.board.moving) : null;
+    history = record.messages;
+    shown = Array.isArray(c.shown) ? c.shown : [];
+    lockedContext = { mode: c.mode, value: c.value, info, board };
+    $('casting-mode').value = c.mode;
+    $('casting-time').value = c.value;
+    $('service-mode').value = record.mode === 'byok' || !freeService.configured ? 'byok' : 'free';
+    let round = 0;
+    for (const message of history) {
+      if (message.role === 'user') addMessage('user', shown[round++] ?? message.content);
+      else addMessage('assistant', message.content);
+    }
+    renderBoard();
+    updateControls();
+    const when = new Date(record.updated_at).toLocaleString('zh-CN', { hour12: false });
+    status(`已恢复上一局（${when}），可以接着问；点「新一局」会删除这条记录。`);
+  } catch {
+    history = []; shown = []; lockedContext = null;
+  }
+}
+window.addEventListener('auth-signed-in', () => {
+  // Chatting before signing in (bring-your-own-key): keep that as the saved reading instead.
+  if (history.length) void saveLast(); else void restoreLast();
+});
+
 function reset() {
   if (busy) return false;
-  if ((history.length || $('question').value.trim() || attachment) && !window.confirm('清空本局对话、输入和附图？连接配置与密钥会保留在当前页面内存。')) return false;
+  if ((history.length || $('question').value.trim() || attachment) && !window.confirm('清空本局对话、输入和附图？已保存到账号的上一局也会删除。连接配置与密钥会保留在当前页面内存。')) return false;
+  if (history.length) void freeService.deleteLast();
   history = [];
+  shown = [];
   lockedContext = null;
   clearImage();
   $('messages').querySelectorAll('.message').forEach(node => node.remove());
@@ -507,8 +581,45 @@ function reset() {
 }
 $('reset').addEventListener('click', reset);
 
+// Small panel dialogs opened from the pet menu, the header chip and the account button.
+let returnFocus = null;
+function openPanel(id) {
+  const panel = $(id);
+  if (!panel || panel.open) return;
+  if (busy && id !== 'help-dialog') { status('正在回答中，完成或停止后再修改设置。'); return; }
+  document.querySelectorAll('dialog.panel-dialog[open]').forEach(d => d.close());
+  returnFocus = document.activeElement;
+  panel.showModal();
+}
+document.querySelectorAll('dialog.panel-dialog').forEach(panel => {
+  panel.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', () => panel.close()));
+  // Click on the backdrop closes the panel.
+  panel.addEventListener('click', event => { if (event.target === panel) panel.close(); });
+  panel.addEventListener('close', () => {
+    if (returnFocus?.isConnected) returnFocus.focus({ preventScroll: true });
+    returnFocus = null;
+  });
+});
+$('account-button').addEventListener('click', () => openPanel('login-dialog'));
+$('casting-chip').addEventListener('click', () => openPanel('casting-dialog'));
+$('open-login').addEventListener('click', () => { $('config-dialog').close(); openPanel('login-dialog'); });
+
+const pet = createPet({ avoid: $('chat-form'), onSelect: target => (target === 'reset' ? reset() : openPanel(target)) });
+
+function startGuide() {
+  runGuide([
+    { target: () => pet.element, title: '我是观象小龙', text: '点我打开菜单：起卦、配置、说明和新一局都在这里。也可以把我拖到任何地方。' },
+    { target: () => $('account-button'), title: '先登录', text: '用 GitHub 登录后，每天可免费问 5 次，不需要任何密钥。' },
+    { target: () => pet.element, title: '或者自带 Key', text: '已有自己的模型接口？点我选「配置」，切换到「自带 API Key」填写即可。' },
+    { target: () => $('question'), title: '一事一问', text: '在这里写下想问的事。默认按求问时刻起卦，可在「起卦」里换成测字或已有卦局。' },
+  ], { onDone: () => $('question').focus({ preventScroll: true }) });
+}
+$('guide-replay').addEventListener('click', () => { $('help-dialog').close(); startGuide(); });
+
 // Clear credentials on navigation / bfcache; never persist secrets or chat.
-window.addEventListener('pagehide', () => { $('api-key').value = ''; approvedDestination = ''; controller?.abort(); freeService.clear(); });
+// The API key never persists; sign-in persists for at most 24h (see auth.mjs).
+window.addEventListener('pagehide', () => { $('api-key').value = ''; approvedDestination = ''; controller?.abort(); });
 renderBoard();
 loadRules();
 initAuth();
+if (!guideSeen.get()) requestAnimationFrame(startGuide);

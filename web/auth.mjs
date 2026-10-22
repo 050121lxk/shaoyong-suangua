@@ -3,8 +3,34 @@ import { sseData } from '../supabase/functions/_shared/sse.mjs';
 
 const $ = id => document.getElementById(id);
 const config = globalThis.SHAOYONG_CONFIG || {};
-const MODEL = 'deepseek-v4.1-flash-1017-g';
-const UPSTREAM = 'https://api.ccode.vip/v1/chat/completions';
+// Sign-in survives reloads on this device for at most 24 hours from login, then must be redone.
+const LOGIN_TTL_MS = 24 * 60 * 60 * 1000;
+const AUTH_KEY = 'guanxiang-auth';
+const loginStorage = {
+  stampKey: key => `${key}:login-at`,
+  expired(key = AUTH_KEY) {
+    try {
+      const at = Number(localStorage.getItem(this.stampKey(key)));
+      return !at || Date.now() - at > LOGIN_TTL_MS;
+    } catch { return true; }
+  },
+  getItem(key) {
+    try {
+      if (this.expired(key)) { this.removeItem(key); return null; }
+      return localStorage.getItem(key);
+    } catch { return null; }
+  },
+  setItem(key, value) {
+    try {
+      // Token refreshes rewrite the session but must not extend the 24h window.
+      if (!localStorage.getItem(key) || this.expired(key)) localStorage.setItem(this.stampKey(key), String(Date.now()));
+      localStorage.setItem(key, value);
+    } catch { /* storage unavailable: session stays in memory only */ }
+  },
+  removeItem(key) {
+    try { localStorage.removeItem(key); localStorage.removeItem(this.stampKey(key)); } catch { /* ignore */ }
+  },
+};
 let client, session = null, quota = null, configured = false, authBusy = false, ready = false;
 let otpEmail = '', widgetId;
 const ERROR_TEXT = {
@@ -24,7 +50,12 @@ function changed() {
   if (session) $('auth-status').textContent = '已登录 · ' + (session.user.email || 'GitHub 用户');
   $('quota-status').textContent = quota
     ? `今日已用 ${quota.used} / 5 次 · 全站今日剩余 ${quota.global_remaining} / 100 次${quota.global_available ? '' : '（已用完）'}`
-    : '配额尚未获取（不可发送）';
+    : '次数尚未获取（暂不可发送）';
+  const remaining = quota ? Math.max(0, 5 - quota.used) : null;
+  $('account-button').textContent = !configured ? '登录' : session ? (remaining === null ? '已登录' : `今日剩 ${remaining} 次`) : '登录';
+  $('account-button').classList.toggle('signed', !!session);
+  $('free-summary').textContent = !configured ? '免费服务暂未开通，可改用自带 API Key。'
+    : session ? `已登录 · ${remaining === null ? '次数获取中' : `今日还可发送 ${remaining} 次`}` : '未登录';
   window.dispatchEvent(new Event('free-auth-change'));
 }
 
@@ -34,14 +65,23 @@ export const freeService = {
   get ready() { return ready; },
   get allowed() { return configured && !!session && !!quota?.allowed && quota.used < 5 && quota.global_available; },
   get endpoint() { return config.FREE_CHAT_URL; },
-  model: MODEL,
-  upstream: UPSTREAM,
-  clear() {
-    // Drop the in-memory SDK session on page exit without a server-wide logout.
-    session = null; quota = null;
-    void client?.auth.stopAutoRefresh();
-    void client?.auth.signOut({ scope: 'local' });
-    changed();
+  get quota() { return quota; },
+  get userId() { return session?.user.id || ''; },
+  // Latest reading ("上一局"), text only, in the user's own row (RLS). Failures never block chatting.
+  async loadLast() {
+    if (!client || !session) return null;
+    const { data, error } = await client.from('chat_last_session').select('mode, context, messages, updated_at').maybeSingle();
+    return error ? null : data;
+  },
+  async saveLast(record) {
+    if (!client || !session) return false;
+    const { error } = await client.from('chat_last_session')
+      .upsert({ user_id: session.user.id, ...record, updated_at: new Date().toISOString() }, { onConflict: 'user_id' });
+    return !error;
+  },
+  async deleteLast() {
+    if (!client || !session) return;
+    await client.from('chat_last_session').delete().eq('user_id', session.user.id);
   },
   async request(action, messages, signal) {
     if (!client || !session) throw new Error('请先登录免费服务。');
@@ -110,21 +150,26 @@ export async function initAuth() {
     if (url.protocol !== 'https:' || edge.origin !== url.origin || edge.pathname !== '/functions/v1/free-chat' ||
         edge.search || edge.hash || edge.username || !config.SUPABASE_ANON_KEY || config.ALLOWED_ORIGIN !== location.origin) throw new Error('config');
     client = createClient(url.href, config.SUPABASE_ANON_KEY, { auth: {
-      persistSession: false, autoRefreshToken: true, detectSessionInUrl: true, flowType: 'implicit',
+      persistSession: true, storage: loginStorage, storageKey: AUTH_KEY,
+      autoRefreshToken: true, detectSessionInUrl: true, flowType: 'implicit',
     } });
     configured = true;
     if (!config.TURNSTILE_SITE_KEY) {
       $('email-login').disabled = true;
       $('email-form').querySelector('.hint').textContent = '邮箱登录暂未开放（待配置邮件服务和人机验证），请先使用 GitHub 登录。';
     }
-    client.auth.onAuthStateChange((_event, value) => {
+    client.auth.onAuthStateChange((event, value) => {
       session = value; quota = null; changed();
       // Never await auth methods from this callback (SDK lock).
       if (session) setTimeout(() => freeService.refreshQuota(), 0);
+      if (session && event === 'SIGNED_IN') setTimeout(() => window.dispatchEvent(new Event('auth-signed-in')), 0);
     });
+    // End the session when the 24h window closes, even if the page stays open.
+    setInterval(() => { if (session && loginStorage.expired()) void expireLogin(); }, 60000);
     const { data, error } = await client.auth.getSession();
     if (error) throw error;
     session = data.session;
+    if (session) window.dispatchEvent(new Event('auth-signed-in'));
     if (!session) authNotice('登录后可免费发送，每日最多 5 次。');
     if (session) await freeService.refreshQuota();
     await captcha();
@@ -176,9 +221,13 @@ $('otp-form').addEventListener('submit', async event => {
   } catch { authNotice('验证码无效或已过期，请检查后重试。'); }
   finally { authBusy = false; }
 });
-$('logout').addEventListener('click', async () => {
+async function signOutLocal(notice) {
   if (!client) return;
-  await client.auth.signOut({ scope: 'local' });
-  session = null; quota = null; authNotice('已退出登录。'); changed();
-});
+  await client.auth.signOut({ scope: 'local' }).catch(() => {});
+  loginStorage.removeItem(AUTH_KEY);
+  session = null; quota = null; authNotice(notice); changed();
+  window.dispatchEvent(new Event('auth-signed-out'));
+}
+const expireLogin = () => signOutLocal('登录已满 24 小时，请重新登录。');
+$('logout').addEventListener('click', () => signOutLocal('已退出登录。'));
 $('refresh-quota').addEventListener('click', () => freeService.refreshQuota());
