@@ -205,10 +205,18 @@ dialog h2{font:500 20px var(--serif);letter-spacing:2px;margin:0;color:var(--gol
   body{font-size:15px}
   .brand-name,.top-link span{display:none}
   .top-link,.account-button{padding:0 10px}
-  .chat-header{flex-wrap:wrap;padding:8px 12px;gap:8px}
-  .chat-header h1{font-size:15px}
-  .top-actions{margin-left:auto}
-  .rule-status{order:3;width:100%;margin-right:0}
+  /* Two tidy rows: brand · title · links / chip · rule status · new reading. */
+  /* Row 1: icon · title · GitHub/login. Row 2: board chip · rule status · new reading. */
+  .chat-header{flex-wrap:wrap;gap:8px;padding:max(8px,env(safe-area-inset-top)) 12px 8px}
+  .chat-header h1{flex:1;min-width:0;font-size:15px;white-space:nowrap;margin-left:0}
+  .top-actions{gap:6px}
+  .top-link,.account-button{min-height:34px;font-size:12px}
+  #casting-chip{order:5;max-width:40vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .rule-status{order:6;flex:1;min-width:0;margin:0;font-size:11px}
+  #rule-status{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  #reset{order:7;min-height:32px;padding:4px 12px}
+  .chat-header>.top-actions{order:2}
+  .chat-header:after{content:"";order:4;flex-basis:100%;height:0}
   .messages{padding:16px 0}
   .messages>*,.request-status,.composer{width:calc(100% - 20px)}
   .welcome{margin-top:8vh}
