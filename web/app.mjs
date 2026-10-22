@@ -608,7 +608,7 @@ const pet = createPet({ avoid: $('chat-form'), onSelect: target => (target === '
 
 function startGuide() {
   runGuide([
-    { target: () => pet.element, title: '我是观象小龙', text: '点我打开菜单：起卦、配置、说明和新一局都在这里。也可以把我拖到任何地方。' },
+    { target: () => pet.element, title: '我是卜小鳞', text: '点我打开菜单：起卦、配置、说明和新一局都在这里。也可以把我拖到任何地方。' },
     { target: () => $('account-button'), title: '先登录', text: '用 GitHub 登录后，每天可免费问 5 次，不需要任何密钥。' },
     { target: () => pet.element, title: '或者自带 Key', text: '已有自己的模型接口？点我选「配置」，切换到「自带 API Key」填写即可。' },
     { target: () => $('question'), title: '一事一问', text: '在这里写下想问的事。默认按求问时刻起卦，可在「起卦」里换成测字或已有卦局。' },
@@ -622,4 +622,8 @@ window.addEventListener('pagehide', () => { $('api-key').value = ''; approvedDes
 renderBoard();
 loadRules();
 initAuth();
-if (!guideSeen.get()) requestAnimationFrame(startGuide);
+// Wait for images and layout (mobile toolbars, background) to settle before measuring targets.
+if (!guideSeen.get()) {
+  const start = () => requestAnimationFrame(() => requestAnimationFrame(startGuide));
+  if (document.readyState === 'complete') start(); else addEventListener('load', start, { once: true });
+}

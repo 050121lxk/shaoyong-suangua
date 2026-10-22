@@ -161,7 +161,11 @@ export function createPet({ onSelect, avoid }) {
   addEventListener('resize', () => { place(); if (isOpen()) layoutMenu(); });
 
   root.dataset.state = 'idle';
+  // Jump straight to the starting spot: animating in from (0,0) made the first guide step
+  // measure the pet mid-flight and point at the top-left corner.
+  root.classList.add('dragging');
   home();
+  requestAnimationFrame(() => requestAnimationFrame(() => root.classList.remove('dragging')));
   return {
     element: button,
     get state() { return activity; },
@@ -182,13 +186,24 @@ export function runGuide(steps, { onDone } = {}) {
   const card = document.getElementById('guide');
   let index = 0;
   const finish = () => {
+    index = steps.length;
     ring.hidden = true; card.hidden = true;
-    removeEventListener('resize', show);
+    clearTimeout(settle);
+    removeEventListener('resize', position);
     document.removeEventListener('keydown', onKey);
     guideSeen.set();
     onDone?.();
   };
   function show() {
+    position();
+    document.getElementById('guide-next').focus({ preventScroll: true });
+    // Targets may still be settling (pet spring, mobile toolbar resize); measure again.
+    clearTimeout(settle);
+    settle = setTimeout(position, 500);
+  }
+  let settle = 0;
+  function position() {
+    if (index >= steps.length) return;
     const step = steps[index];
     const rect = step.target().getBoundingClientRect();
     const pad = 8;
@@ -203,12 +218,11 @@ export function runGuide(steps, { onDone } = {}) {
     const top = below ? rect.bottom + 16 : Math.max(12, rect.top - 16 - ch);
     const left = Math.min(Math.max(12, rect.left + rect.width / 2 - cw / 2), innerWidth - cw - 12);
     Object.assign(card.style, { left: `${left}px`, top: `${top}px` });
-    document.getElementById('guide-next').focus({ preventScroll: true });
   }
   const onKey = event => { if (event.key === 'Escape') finish(); };
   document.getElementById('guide-next').onclick = () => { if (++index >= steps.length) finish(); else show(); };
   document.getElementById('guide-skip').onclick = finish;
-  addEventListener('resize', show);
+  addEventListener('resize', position);
   document.addEventListener('keydown', onKey);
   show();
 }
