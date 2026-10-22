@@ -251,3 +251,48 @@ test('SQL hard caps serialize in global→user order and revoke browser executio
   assert.ok(sql.indexOf('v_global from public.free_daily_global where day = v_day for update') < sql.indexOf('v_used, v_last from public.free_daily_users'));
   assert.match(sql, /revoke all on function public.free_quota\(uuid, boolean\) from public, anon, authenticated/);
 });
+
+test('guests use their own quota RPC keyed by a hashed client IP; raw IPs never leave the function', async () => {
+  const calls = [];
+  const state = { used: 0 };
+  const handler = createHandler({ env: k => settings[k], rules: 'r', fetcher: async (url, init) => {
+    calls.push({ url, init });
+    if (url.endsWith('/auth/v1/user')) return json({ id: 'guest-id', is_anonymous: true, app_metadata: { providers: ['anonymous'] } });
+    if (url.endsWith('/rpc/guest_quota')) {
+      const body = JSON.parse(init.body);
+      assert.equal(body.p_user, 'guest-id');
+      assert.match(body.p_ip_hash, /^[0-9a-f]{64}$/);
+      if (body.p_consume) state.used++;
+      return json({ allowed: state.used <= 3, used: state.used, limit: 3, global_available: true, global_remaining: 100 - state.used });
+    }
+    assert.notEqual(true, url.endsWith('/rpc/free_quota'), 'guests must not touch the signed-in pool');
+    return sse([{ choices: [{ delta: { content: '游客回答' } }] }, { choices: [{ delta: {}, finish_reason: 'stop' }] }]);
+  } });
+  const ipHeaders = { 'CF-Connecting-IP': '203.0.113.9', 'X-Forwarded-For': '203.0.113.9, 10.0.0.1' };
+  const quota = await (await handler(req({ action: 'quota' }, ipHeaders))).json();
+  assert.equal(quota.quota.limit, 3); assert.equal(quota.quota.guest, true);
+  const list = await events(await handler(req(undefined, ipHeaders)));
+  assert.equal(textOf(list), '游客回答');
+  const rpc = calls.filter(c => c.url.endsWith('/rpc/guest_quota')).map(c => c.init.body).join('');
+  assert.ok(!rpc.includes('203.0.113.9'), 'raw IP is not sent to the database');
+  // Same /64 IPv6 network → same hash; different IPv4 → different hash.
+  const hashes = [];
+  for (const ip of ['2001:db8:1:2::a', '2001:db8:1:2::b', '198.51.100.1']) {
+    await handler(req({ action: 'quota' }, { 'CF-Connecting-IP': ip }));
+    hashes.push(JSON.parse(calls.filter(c => c.url.endsWith('/rpc/guest_quota')).at(-1).init.body).p_ip_hash);
+  }
+  assert.equal(hashes[0], hashes[1]); assert.notEqual(hashes[0], hashes[2]);
+  // No usable client IP → guests are refused before any quota or paid call.
+  const before = calls.length;
+  const denied = await handler(req(undefined, { 'CF-Connecting-IP': 'not-an-ip' }));
+  assert.equal(denied.status, 403);
+  assert.equal((await denied.json()).error, 'guest_unavailable');
+  assert.ok(calls.slice(before).every(c => c.url.endsWith('/auth/v1/user')));
+});
+test('a signed-in quota claiming the guest limit (or vice versa) is rejected as malformed', async () => {
+  const handler = createHandler({ env: k => settings[k], rules: 'r', fetcher: async url => {
+    if (url.endsWith('/auth/v1/user')) return json({ id: 'u', email_confirmed_at: 'x', app_metadata: { providers: ['github'] } });
+    return json({ allowed: true, used: 0, limit: 3, global_available: true, global_remaining: 100 });
+  } });
+  assert.equal((await handler(req({ action: 'quota' }))).status, 503);
+});

@@ -35,7 +35,9 @@ let client, session = null, quota = null, configured = false, authBusy = false, 
 let otpEmail = '', widgetId;
 const ERROR_TEXT = {
   login_required: '请先登录。', session_expired: '登录已过期，请重新登录。', verified_login_required: '请使用已验证的 GitHub 或邮箱账号。',
-  user_limit: '你今天的 5 次已用完，请明天再来。', global_limit: '全站今天的 100 次已用完，请明天再来。',
+  user_limit: '你今天的免费次数已用完，请明天再来。', global_limit: '今天的免费总次数已用完，请明天再来。',
+  ip_limit: '这个网络今天已有 4 个游客使用过，请登录 GitHub 或明天再来。',
+  guest_unavailable: '暂时无法识别你的网络，游客不可用，请登录 GitHub。',
   cooldown: '发送过快，请至少间隔 10 秒再试。', quota_exhausted: '今日免费次数已用完。',
   service_unavailable: '免费服务未开通或暂时不可用，请稍后再试，也可自带 Key。', quota_unavailable: '配额服务暂不可用，本次未发送给模型。',
   upstream_failed: '模型接口出错，本次已计入次数，请勿反复重试。', upstream_unavailable: '上游连接失败或超时，本次已计入次数。',
@@ -44,14 +46,18 @@ const ERROR_TEXT = {
   time_limit: '模型在免费服务的 140 秒时限内没有输出正文，本次已计入次数。',
 };
 
+const isGuest = () => session?.user?.is_anonymous === true;
+
 function changed() {
   $('auth-actions').hidden = !configured || !!session;
   $('signed-in').hidden = !session;
-  if (session) $('auth-status').textContent = '已登录 · ' + (session.user.email || 'GitHub 用户');
+  if (session) $('auth-status').textContent = isGuest() ? '游客身份 · 不保存上一局' : '已登录 · ' + (session.user.email || 'GitHub 用户');
+  $('guest-login').hidden = !!session;
+  const pool = isGuest() ? '游客' : '全站';
   $('quota-status').textContent = quota
-    ? `今日已用 ${quota.used} / 5 次 · 全站今日剩余 ${quota.global_remaining} / 100 次${quota.global_available ? '' : '（已用完）'}`
+    ? `今日已用 ${quota.used} / ${quota.limit} 次 · ${pool}今日剩余 ${quota.global_remaining} / 100 次${quota.global_available ? '' : '（已用完）'}`
     : '次数尚未获取（暂不可发送）';
-  const remaining = quota ? Math.max(0, 5 - quota.used) : null;
+  const remaining = quota ? Math.max(0, quota.limit - quota.used) : null;
   $('account-button').textContent = !configured ? '登录' : session ? (remaining === null ? '已登录' : `今日剩 ${remaining} 次`) : '登录';
   $('account-button').classList.toggle('signed', !!session);
   $('free-summary').textContent = !configured ? '免费服务暂未开通，可改用自带 API Key。'
@@ -63,24 +69,27 @@ export const freeService = {
   get configured() { return configured; },
   get authenticated() { return !!session; },
   get ready() { return ready; },
-  get allowed() { return configured && !!session && !!quota?.allowed && quota.used < 5 && quota.global_available; },
+  get allowed() { return configured && !!session && !!quota?.allowed && quota.used < quota.limit && quota.global_available; },
+  get guest() { return isGuest(); },
   get endpoint() { return config.FREE_CHAT_URL; },
   get quota() { return quota; },
   get userId() { return session?.user.id || ''; },
   // Latest reading ("上一局"), text only, in the user's own row (RLS). Failures never block chatting.
   async loadLast() {
-    if (!client || !session) return null;
+    if (!client || !session || isGuest()) return null;
     const { data, error } = await client.from('chat_last_session').select('mode, context, messages, updated_at').maybeSingle();
     return error ? null : data;
   },
   async saveLast(record) {
+    // Guests never store a reading (also enforced by the table's RLS policy).
     if (!client || !session) return false;
+    if (isGuest()) return true;
     const { error } = await client.from('chat_last_session')
       .upsert({ user_id: session.user.id, ...record, updated_at: new Date().toISOString() }, { onConflict: 'user_id' });
     return !error;
   },
   async deleteLast() {
-    if (!client || !session) return;
+    if (!client || !session || isGuest()) return;
     await client.from('chat_last_session').delete().eq('user_id', session.user.id);
   },
   async request(action, messages, signal) {
@@ -186,8 +195,25 @@ $('github-login').addEventListener('click', async () => {
   if (!client || authBusy) return;
   authBusy = true;
   const redirectTo = location.origin + location.pathname;
+  // A guest switching to GitHub starts a fresh signed-in session; the guest account is left to expire.
+  if (isGuest()) await client.auth.signOut({ scope: 'local' }).catch(() => {});
   const { error } = await client.auth.signInWithOAuth({ provider: 'github', options: { redirectTo, scopes: 'read:user user:email' } });
   if (error) { authNotice('GitHub 登录失败，请检查管理员的 OAuth 和回调配置。'); authBusy = false; }
+});
+$('guest-login').addEventListener('click', async () => {
+  if (!client || authBusy || session) return;
+  authBusy = true;
+  $('guest-login').disabled = true;
+  try {
+    const { error } = await client.auth.signInAnonymously();
+    if (error) throw error;
+    authNotice('已以游客身份进入，今天可免费问 3 次。');
+  } catch (error) {
+    authNotice(error?.status === 429 ? '游客创建过于频繁，请稍后再试或登录 GitHub。' : '游客登录暂不可用，请改用 GitHub 登录。');
+  } finally {
+    authBusy = false;
+    $('guest-login').disabled = false;
+  }
 });
 $('email-form').addEventListener('submit', async event => {
   event.preventDefault();

@@ -3,6 +3,21 @@ import { completionChunks, streamDelta } from './sse.mjs';
 export const UPSTREAM = 'https://api.ccode.vip/v1/chat/completions';
 // Total budget per request; hosted free plan wall clock is 150s.
 export const REQUEST_DEADLINE_MS = 140000;
+export const USER_DAILY_LIMIT = 5;
+export const GUEST_DAILY_LIMIT = 3;
+
+// Client IP as set by the platform edge (Cloudflare). Callers cannot override CF-Connecting-IP
+// (Cloudflare rejects it), and a caller-supplied X-Forwarded-For is replaced, so take its first entry only as fallback.
+// Stored only as an HMAC so the database never holds raw addresses.
+export async function clientIpHash(request, secret) {
+  const ip = (request.headers.get('cf-connecting-ip') || (request.headers.get('x-forwarded-for') || '').split(',')[0]).trim();
+  if (!/^[0-9a-fA-F:.]{3,45}$/.test(ip)) return null;
+  // IPv6: one household/phone usually owns a whole /64, so count the /64 as one network.
+  const network = ip.includes(':') ? ip.toLowerCase().split(':').slice(0, 4).join(':') + '::/64' : ip;
+  const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  const mac = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode('guest-ip:' + network));
+  return [...new Uint8Array(mac)].map(b => b.toString(16).padStart(2, '0')).join('');
+}
 export const MODEL = 'deepseek-v4.1-flash-1017-g';
 export const MAX_BODY = 8 * 1024 * 1024;
 export const DEFAULT_MAX_OUTPUT_TOKENS = 32768;
@@ -82,8 +97,15 @@ export function createHandler({ env, rules, fetcher = fetch, deadlineMs = REQUES
       if (!auth.ok) return reply(401, { error: 'session_expired' });
       const user = JSON.parse(await readLimited(auth, 128000));
       const providers = Array.isArray(user.app_metadata?.providers) ? user.app_metadata.providers : [];
-      const eligible = user.email_confirmed_at && providers.some(p => p === 'github' || p === 'email') && !user.user_metadata?.is_anonymous;
-      if (!user.id || !eligible || user.is_anonymous || (user.banned_until && Date.parse(user.banned_until) > Date.now())) return reply(403, { error: 'verified_login_required' });
+      // Guests (Supabase anonymous sign-in) get their own, smaller pool; everyone else needs a verified login.
+      const guest = user.is_anonymous === true;
+      const verified = !guest && user.email_confirmed_at && providers.some(p => p === 'github' || p === 'email') && !user.user_metadata?.is_anonymous;
+      if (!user.id || !(guest || verified) || (user.banned_until && Date.parse(user.banned_until) > Date.now())) return reply(403, { error: 'verified_login_required' });
+      let ipHash;
+      if (guest) {
+        ipHash = await clientIpHash(request, serviceKey);
+        if (!ipHash) return reply(403, { error: 'guest_unavailable' });
+      }
       if (Number(request.headers.get('content-length')) > MAX_BODY) return reply(413, { error: 'request_too_large' });
       let body;
       try { body = JSON.parse(await readLimited(request, MAX_BODY)); }
@@ -95,14 +117,15 @@ export function createHandler({ env, rules, fetcher = fetch, deadlineMs = REQUES
         catch { return reply(400, { error: 'invalid_messages' }); }
       }
       // The authenticated user id is NEVER read from the request body.
-      const quotaResponse = await fetcher(`${supabase}/rest/v1/rpc/free_quota`, {
+      const limit = guest ? GUEST_DAILY_LIMIT : USER_DAILY_LIMIT;
+      const quotaResponse = await fetcher(`${supabase}/rest/v1/rpc/${guest ? 'guest_quota' : 'free_quota'}`, {
         method: 'POST', headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ p_user: user.id, p_consume: body.action === 'chat' }),
+        body: JSON.stringify({ p_user: user.id, ...(guest ? { p_ip_hash: ipHash } : {}), p_consume: body.action === 'chat' }),
         redirect: 'error', signal: AbortSignal.timeout(10000),
       });
       if (!quotaResponse.ok) return reply(503, { error: 'quota_unavailable' });
-      const quota = JSON.parse(await readLimited(quotaResponse, 16000));
-      if (!Number.isInteger(quota.used) || quota.used < 0 || quota.used > 5 || quota.limit !== 5 ||
+      const quota = { ...JSON.parse(await readLimited(quotaResponse, 16000)), guest };
+      if (!Number.isInteger(quota.used) || quota.used < 0 || quota.used > limit || quota.limit !== limit ||
           typeof quota.allowed !== 'boolean' || typeof quota.global_available !== 'boolean' ||
           !Number.isInteger(quota.global_remaining) || quota.global_remaining < 0 || quota.global_remaining > 100) return reply(503, { error: 'quota_unavailable' });
       if (body.action === 'quota') return reply(200, { quota, model: MODEL, upstream: UPSTREAM });
