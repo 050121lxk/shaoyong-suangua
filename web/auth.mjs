@@ -31,6 +31,22 @@ const loginStorage = {
     try { localStorage.removeItem(key); localStorage.removeItem(this.stampKey(key)); } catch { /* ignore */ }
   },
 };
+// A signed-out guest is parked on this device (refresh token only, at most 7 days, matching server cleanup)
+// so "游客体验" resumes the same guest — with the same daily count — instead of creating a new account.
+const GUEST_KEY = 'guanxiang-guest';
+const GUEST_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const parkedGuest = {
+  get() {
+    try {
+      const value = JSON.parse(localStorage.getItem(GUEST_KEY) || 'null');
+      if (value && typeof value.refresh_token === 'string' && Date.now() - value.at < GUEST_TTL_MS) return value;
+    } catch { /* ignore */ }
+    this.clear();
+    return null;
+  },
+  set(refreshToken) { try { localStorage.setItem(GUEST_KEY, JSON.stringify({ refresh_token: refreshToken, at: Date.now() })); } catch { /* ignore */ } },
+  clear() { try { localStorage.removeItem(GUEST_KEY); } catch { /* ignore */ } },
+};
 let client, session = null, quota = null, configured = false, authBusy = false, ready = false;
 let otpEmail = '', widgetId;
 const ERROR_TEXT = {
@@ -195,8 +211,8 @@ $('github-login').addEventListener('click', async () => {
   if (!client || authBusy) return;
   authBusy = true;
   const redirectTo = location.origin + location.pathname;
-  // A guest switching to GitHub starts a fresh signed-in session; the guest account is left to expire.
-  if (isGuest()) await client.auth.signOut({ scope: 'local' }).catch(() => {});
+  // A guest switching to GitHub keeps the guest parked on this device for later.
+  if (isGuest()) await parkGuest();
   const { error } = await client.auth.signInWithOAuth({ provider: 'github', options: { redirectTo, scopes: 'read:user user:email' } });
   if (error) { authNotice('GitHub 登录失败，请检查管理员的 OAuth 和回调配置。'); authBusy = false; }
 });
@@ -205,6 +221,13 @@ $('guest-login').addEventListener('click', async () => {
   authBusy = true;
   $('guest-login').disabled = true;
   try {
+    const parked = parkedGuest.get();
+    if (parked) {
+      // Exchanges the stored refresh token for a fresh session of the same guest.
+      const { data, error } = await client.auth.refreshSession({ refresh_token: parked.refresh_token });
+      parkedGuest.clear();
+      if (!error && data.session?.user?.is_anonymous) { authNotice('已恢复本设备的游客身份。'); return; }
+    }
     const { error } = await client.auth.signInAnonymously();
     if (error) throw error;
     authNotice('已以游客身份进入，今天可免费问 3 次。');
@@ -247,9 +270,18 @@ $('otp-form').addEventListener('submit', async event => {
   } catch { authNotice('验证码无效或已过期，请检查后重试。'); }
   finally { authBusy = false; }
 });
+// Detach the guest from the page without revoking it on the server, and remember it on this device.
+async function parkGuest() {
+  const { data } = await client.auth.getSession();
+  if (data.session?.user?.is_anonymous && data.session.refresh_token) parkedGuest.set(data.session.refresh_token);
+  // The SDK reads the session from storage on every call, so clearing it detaches the guest locally.
+  // No server sign-out: the parked refresh token must stay valid.
+  loginStorage.removeItem(AUTH_KEY);
+}
 async function signOutLocal(notice) {
   if (!client) return;
-  await client.auth.signOut({ scope: 'local' }).catch(() => {});
+  if (isGuest()) await parkGuest();
+  else await client.auth.signOut({ scope: 'local' }).catch(() => {});
   loginStorage.removeItem(AUTH_KEY);
   session = null; quota = null; authNotice(notice); changed();
   window.dispatchEvent(new Event('auth-signed-out'));

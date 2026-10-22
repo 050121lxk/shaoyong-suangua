@@ -93,8 +93,12 @@ test('web uses text-only output, bounded 24h sign-in storage and only an explici
   // Sign-in persists through a wrapper that enforces the 24h window; nothing else in auth.mjs touches storage.
   assert.match(auth, /persistSession: true, storage: loginStorage/);
   assert.match(auth, /LOGIN_TTL_MS = 24 \* 60 \* 60 \* 1000/);
-  assert.deepEqual([...auth.matchAll(/localStorage\.(\w+)\(/g)].map(m => m[1]).sort(),
-    ['getItem', 'getItem', 'getItem', 'removeItem', 'removeItem', 'setItem', 'setItem']);
+  // Storage keys: the 24h sign-in (AUTH_KEY + its stamp) and a parked guest refresh token (GUEST_KEY, 7 days).
+  assert.deepEqual([...auth.matchAll(/localStorage\.(\w+)\(([^,)]+)/g)].map(m => `${m[1]} ${m[2]}`).sort(), [
+    'getItem GUEST_KEY', 'getItem key', 'getItem key', 'getItem this.stampKey(key',
+    'removeItem GUEST_KEY', 'removeItem key', 'removeItem this.stampKey(key',
+    'setItem GUEST_KEY', 'setItem key', 'setItem this.stampKey(key']);
+  assert.match(auth, /GUEST_TTL_MS = 7 \* 24 \* 60 \* 60 \* 1000/);
   // Saved readings are text only (images replaced by a marker) and the API key never leaves page memory.
   assert.match(app, /\[附图未保存\]/);
   assert.doesNotMatch(app, /saveLast\([^)]*api-key/);

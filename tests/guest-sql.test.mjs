@@ -18,7 +18,8 @@ test('guest pool: 3 per guest per day, 100 across guests, 4 guests per network p
       create function auth.jwt() returns jsonb language sql stable as $$ select coalesce(nullif(current_setting('request.jwt.claims', true), ''), '{}')::jsonb $$;
       grant usage on schema auth to anon, authenticated; grant execute on all functions in schema auth to anon, authenticated;
       grant usage on schema public to anon, authenticated;`);
-    for (const file of ['202610170001_free_quota.sql', '202610200001_global_quota_remaining.sql', '202610220001_chat_last_session.sql', '202610230001_guest_quota.sql']) {
+    for (const file of ['202610170001_free_quota.sql', '202610200001_global_quota_remaining.sql', '202610220001_chat_last_session.sql',
+      '202610230001_guest_quota.sql', '202610230002_guest_cleanup_unused.sql']) {
       await db.exec(await readFile(new URL('../supabase/migrations/' + file, import.meta.url), 'utf8'));
     }
     const guest = async (n, net, consume = true) => (await db.query('select public.guest_quota($1::uuid, $2, $3) as q', [user(n), ip(net), consume])).rows[0].q;
@@ -62,15 +63,24 @@ test('guest pool: 3 per guest per day, 100 across guests, 4 guests per network p
     assert.equal((await guest(2, 1)).used, 1);
     for (const n of [9, 10, 11]) { await cool(); assert.equal((await guest(n, 1)).allowed, true); }
 
-    // Cleanup: guests idle 7+ days are deleted with their rows; active guests and real users stay.
+    // Only sending marks a guest as used; viewing the quota does not.
+    await guest(40, 9, false);
+    assert.equal((await db.query(`select count(*)::int as n from public.guest_activity where user_id = $1`, [user(40)])).rows[0].n, 0);
+
+    // Cleanup: never-used guests go after 1 day, used guests after 7 idle days; real users never.
     await db.exec(`update auth.users set created_at = now() - interval '30 days', last_sign_in_at = now() - interval '30 days';
+      update auth.users set created_at = now() - interval '2 hours' where id = '${user(41)}';
       update public.guest_activity set last_used_at = now() - interval '8 days' where user_id <> '${user(2)}';
+      update public.guest_activity set last_used_at = now() - interval '3 days' where user_id = '${user(3)}';
       insert into public.free_guest_ip_daily(day, ip_hash, user_id) values (current_date - 5, '${ip(9)}', '${user(2)}');`);
     const deleted = (await db.query('select public.cleanup_stale_guests() as n')).rows[0].n;
     const left = (await db.query('select id from auth.users order by id')).rows.map(r => r.id);
     assert.ok(left.includes(user(1)), 'non-anonymous users are never cleaned up');
     assert.ok(left.includes(user(2)), 'recently used guest kept');
-    assert.ok(!left.includes(user(3)), 'idle guest removed');
+    assert.ok(left.includes(user(3)), 'guest used 3 days ago kept');
+    assert.ok(!left.includes(user(4)), 'guest idle 8 days removed');
+    assert.ok(!left.includes(user(40)), 'guest that never sent, created a day+ ago, removed');
+    assert.ok(left.includes(user(41)), 'brand-new unused guest kept for its first day');
     assert.ok(deleted >= 50);
     assert.equal((await db.query(`select count(*)::int as n from public.free_guest_ip_daily where day < current_date - 1`)).rows[0].n, 0);
 
