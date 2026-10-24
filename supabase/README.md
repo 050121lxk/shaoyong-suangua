@@ -4,7 +4,7 @@
 
 ## 固定边界
 
-- 上游 `https://api.ccode.vip/v1/chat/completions`，模型 `deepseek-v4.1-flash-1017-g`，默认请求输出预算 32768 token，不自动重试。此值不是提供商公布的模型最大值；推理内容可能占用预算，实际可用输出也受上游上下文与模型限制约束。
+- 上游 `https://api.ccode.vip/v1/chat/completions`，模型 `deepseek-v4.1-flash-1017`，默认请求输出预算 32768 token，不自动重试。此值不是提供商公布的模型最大值；推理内容可能占用预算，实际可用输出也受上游上下文与模型限制约束。
 - 仅已验证的 GitHub／邮箱账号可请求，**每账号每日 5 次、全站每日 100 次**，北京时间零点进入新配额日，每账号至少间隔 10 秒。登录后网页显示本人已用次数和全站今日剩余次数。
 - 管理员随时查询今日全站用量：`npx supabase db query --linked "select used, 100 - used as remaining from public.free_daily_global where day = (now() at time zone 'Asia/Shanghai')::date"`（无结果表示今天还没人用，剩 100 次）。
 - 服务端先扣次数再转发；上游失败、用户停止等待或断网也可能消耗次数。刷新、新开一局、换浏览器不能重置数据库计数。

@@ -18,7 +18,7 @@ export async function clientIpHash(request, secret) {
   const mac = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode('guest-ip:' + network));
   return [...new Uint8Array(mac)].map(b => b.toString(16).padStart(2, '0')).join('');
 }
-export const MODEL = 'deepseek-v4.1-flash-1017-g';
+export const MODEL = 'deepseek-v4.1-flash-1017';
 export const MAX_BODY = 8 * 1024 * 1024;
 export const DEFAULT_MAX_OUTPUT_TOKENS = 32768;
 // Resource guard, not a display slice; leave room for long ASCII/CJK completions.

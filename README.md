@@ -107,7 +107,7 @@
 
 本地开发与网站发布方法见 [web/README.md](web/README.md)。
 
-免费通道固定使用 `deepseek-v4.1-flash-1017-g`，共享 Key 仅放服务端，不能靠前端混淆保密。**免费服务需要单独部署和配置，不随源码发布自动开通**；管理员请见 [Supabase 开通指南](supabase/README.md)。
+免费通道固定使用 `deepseek-v4.1-flash-1017`，共享 Key 仅放服务端，不能靠前端混淆保密。**免费服务需要单独部署和配置，不随源码发布自动开通**；管理员请见 [Supabase 开通指南](supabase/README.md)。
 
 ### 安装到 OpenCode
 
