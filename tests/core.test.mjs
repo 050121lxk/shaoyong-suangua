@@ -71,6 +71,20 @@ test('rule adapter contains complete documents and does not invent tool access',
   assert.ok(!prompt.includes('name: shaoyong-suangua'));
 });
 
+test('rules answer directly without asking, then refit only on user feedback', () => {
+  const skill = readFileSync(new URL('../SKILL.md', import.meta.url), 'utf8');
+  const examples = readFileSync(new URL('../EXAMPLES.md', import.meta.url), 'utf8');
+  const prompt = assembleRules([['SKILL.md', skill]]);
+  assert.match(skill, /先断后验：不向卦主提问/);
+  assert.match(skill, /卦主不给反馈就到此为止/);
+  assert.match(skill, /反馈拟合/);
+  // The old ask-first workflow must not survive anywhere the model reads.
+  for (const text of [skill, examples, prompt]) {
+    assert.doesNotMatch(text, /先问后断|多轮提问|针对候选象提问|不限轮数|编成问题问卦主|必要追问|缺信息先问/);
+  }
+  assert.match(prompt, /不向用户提问、结尾不追问/);
+});
+
 test('API reply extraction handles strings and text blocks; no reasoning-only false success', () => {
   assert.equal(extractReply({ choices: [{ message: { content: '正文' } }] }), '正文');
   assert.equal(extractReply({ choices: [{ message: { content: [{ type: 'text', text: '正文' }] } }] }), '正文');

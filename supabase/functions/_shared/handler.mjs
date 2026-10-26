@@ -140,7 +140,7 @@ export function createHandler({ env, rules, fetcher = fetch, deadlineMs = REQUES
       try {
         upstream = await fetcher(UPSTREAM, {
           method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream', Authorization: `Bearer ${upstreamKey}` },
-          body: JSON.stringify({ model: MODEL, messages: [{ role: 'system', content: rules + '\n网页免费版每用户每天仅五次发送。请将必要追问集中在一轮内（不要为凑次数省略依据），信息足够则及时给结论与可核对卦象；不要保证五轮内一定能断清。' }, ...messages], max_tokens: maxOutputTokens, stream: true }),
+          body: JSON.stringify({ model: MODEL, messages: [{ role: 'system', content: rules + '\n网页免费版发送次数有限（登录用户每天五次、游客每天三次）。每一轮都直接给出完整断语与可核对卦象，不向用户提问；用户之后主动反馈再在原卦局上拟合。' }, ...messages], max_tokens: maxOutputTokens, stream: true }),
           redirect: 'error', signal: upstreamAbort.signal,
         });
       } catch { clearTimeout(deadline); return reply(502, { error: 'upstream_unavailable', quota }); }

@@ -153,7 +153,7 @@ function contextText(ctx) {
     (ctx.board ? boardText(ctx.board, ctx.info) : calendarText(ctx.info)) + '\n' +
     (ctx.mode === 'manual' ? '这是用户指定的卦局，必须沿用，不能重新起卦。若是后天卦，请用户说明路径。' :
       ctx.mode === 'time' ? '此为默认时间卦；若用户正文已给不同卦局，以用户给定为准，不重起。' :
-        '本页没有自动起时间卦；请按用户给的字、征兆或已有信息依技能取卦，缺信息先问。');
+        '本页没有自动起时间卦；请按用户给的字、征兆或已有信息依技能取卦，只在缺少字或方位等起卦要素时请用户补全，不索要其他信息。');
 }
 
 const nearBottom = () => {
