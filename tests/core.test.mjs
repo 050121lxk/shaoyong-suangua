@@ -78,6 +78,8 @@ test('rules answer directly without asking, then refit only on user feedback', (
   assert.match(skill, /先断后验：不向卦主提问/);
   assert.match(skill, /卦主不给反馈就到此为止/);
   assert.match(skill, /反馈拟合/);
+  assert.match(skill, /互证关\*\*：测字、外应、旺衰、应期、故事线完全贯通/);
+  assert.match(skill, /没说的不预设、不脑补/);
   // The old ask-first workflow must not survive anywhere the model reads.
   for (const text of [skill, examples, prompt]) {
     assert.doesNotMatch(text, /先问后断|多轮提问|针对候选象提问|不限轮数|编成问题问卦主|必要追问|缺信息先问/);
